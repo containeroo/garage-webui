@@ -1,0 +1,61 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: garage_webui_test
+          POSTGRES_USER: garage_webui
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U garage_webui -d garage_webui_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      GARAGE_WEBUI_TEST_DATABASE_URL: postgres://garage_webui:test-password@localhost:5432/garage_webui_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: cd web && npm ci && npx playwright install --with-deps chromium
+      - run: make test-e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: web/test-results/
+          if-no-files-found: ignore

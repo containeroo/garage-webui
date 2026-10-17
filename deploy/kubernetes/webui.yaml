@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage-webui
+spec:
+  selector:
+    app: garage-webui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage-webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: garage-webui
+  template:
+    metadata:
+      labels:
+        app: garage-webui
+    spec:
+      containers:
+        - name: webui
+          image: ghcr.io/containeroo/garage-webui:latest
+          args:
+            [
+              "--listen-address",
+              "0.0.0.0:8080",
+              "--management-listen-address",
+              "0.0.0.0:8081",
+            ]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: garage-webui-secrets
+                  key: postgres-password
+            - name: GARAGE_WEBUI__DATABASE_URL
+              value: postgres://garage_webui:$(POSTGRES_PASSWORD)@garage-postgres:5432/garage_webui?sslmode=disable
+            - name: GARAGE_WEBUI__GARAGE_URL
+              value: http://garage:3903
+            - name: GARAGE_WEBUI__GARAGE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: garage-webui-secrets
+                  key: garage-admin-token
+            - name: GARAGE_WEBUI__AUTH_MODE
+              value: local
+            - name: GARAGE_WEBUI__PUBLIC_URL
+              value: http://localhost:8080
+            - name: GARAGE_WEBUI__S3_PUBLIC_URL
+              value: http://localhost:3900
+            - name: GARAGE_WEBUI__S3_REGION
+              value: garage
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: management
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: management
+            initialDelaySeconds: 5

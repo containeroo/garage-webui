@@ -1,0 +1,6 @@
+.git
+.projectatlas
+web/node_modules
+web/dist
+bin
+.env

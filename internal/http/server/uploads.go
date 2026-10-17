@@ -1,0 +1,66 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/gi8lino/garage-webui/internal/application/objects"
+	"github.com/gi8lino/garage-webui/internal/http/middleware"
+	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
+	"github.com/gi8lino/garage-webui/internal/s3"
+)
+
+// presignUpload authorizes an editor and issues a short-lived, object-scoped URL.
+// Only metadata passes through the backend; file bytes go directly to the S3 API.
+func (s *Server) presignUpload(w http.ResponseWriter, r *http.Request) {
+	id, _ := middleware.RequestIdentity(r)
+	role := id.Role
+
+	if s.objects == nil {
+		httpresponse.Error(w, "direct uploads require the Garage S3 endpoint to be configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var input struct {
+		BucketID string `json:"bucketId"`
+		Key      string `json:"key"`
+		Size     int64  `json:"size"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.objects.PrepareUpload(r.Context(), role, input.BucketID, input.Key, input.Size, time.Now())
+	if errors.Is(err, objects.ErrForbidden) {
+		httpresponse.Error(w, "upload permissions required", http.StatusForbidden)
+		return
+	}
+
+	if errors.Is(err, objects.ErrInvalid) {
+		httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+		return
+	}
+
+	if errors.Is(err, objects.ErrBucket) {
+		httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
+		return
+	}
+
+	if err != nil {
+		s.logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
+		httpresponse.Error(w, "cannot prepare Garage upload", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url":       result.URL,
+		"method":    result.Method,
+		"expiresIn": int(s3.URLLifetime.Seconds()),
+	})
+}

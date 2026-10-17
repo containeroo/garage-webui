@@ -1,0 +1,11 @@
+# Disposable local test provider. Do not use these credentials in production.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start-dev", "--import-realm", "--hostname=http://127.0.0.1:18090"]
+    environment:
+      E2E_OIDC_REDIRECT_URI: http://127.0.0.1:18086/oidc-e2e/auth/callback
+    ports:
+      - "127.0.0.1:18090:8080"
+    volumes:
+      - ./oidc-test-realm.json:/opt/keycloak/data/import/garage-webui-realm.json:ro

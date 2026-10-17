@@ -1,0 +1,72 @@
+name: garage-webui-dev
+# Local-only development stack. The credentials below are not for production.
+services:
+  garage:
+    image: dxflrs/garage:v2.4.1
+    command: ["/garage", "server", "--single-node"]
+    environment:
+      GARAGE_ADMIN_TOKEN: local-garage-admin-token
+      GARAGE_RPC_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+    ports:
+      - "127.0.0.1:3903:3903"
+      # Direct browser uploads use the S3 API, not the Admin API.
+      - "127.0.0.1:3900:3900"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+
+  garage-ready:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      garage:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        for attempt in $$(seq 1 60); do
+          if curl --fail --silent --output /dev/null -H 'Authorization: Bearer local-garage-admin-token' http://garage:3903/v2/GetClusterHealth; then exit 0; fi;
+          sleep 1;
+        done;
+        echo 'Garage did not become ready' >&2; exit 1
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: garage_webui
+      POSTGRES_USER: garage_webui
+      POSTGRES_PASSWORD: local-database-password
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garage_webui -d garage_webui"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  webui:
+    build:
+      context: ../..
+    depends_on:
+      garage-ready:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      GARAGE_WEBUI__DATABASE_URL: postgres://garage_webui:local-database-password@postgres:5432/garage_webui?sslmode=disable
+      GARAGE_WEBUI__GARAGE_URL: http://garage:3903
+      GARAGE_WEBUI__GARAGE_TOKEN: local-garage-admin-token
+      GARAGE_WEBUI__AUTH_MODE: local
+      GARAGE_WEBUI__PUBLIC_URL: http://localhost:8080
+      GARAGE_WEBUI__S3_PUBLIC_URL: http://localhost:3900
+      GARAGE_WEBUI__S3_REGION: garage
+      GARAGE_WEBUI__ROUTE_PREFIX: ${ROUTE_PREFIX:-}
+
+volumes:
+  garage-meta:
+  garage-data:
+  postgres-data:

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Garage Web UI</title>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 28 32 14l20 14v22H12Z" stroke-width="3"/>
+    <path d="M22 50V32h20v18M22 38h20M22 44h20" stroke-width="2.5"/>
+  </g>
+</svg>

@@ -1,0 +1,61 @@
+name: garage-webui
+services:
+  garage:
+    image: dxflrs/garage:v2.4.1
+    command: ["/garage", "server", "--single-node"]
+    restart: unless-stopped
+    environment:
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:?Set GARAGE_ADMIN_TOKEN in deploy/.env}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?Set GARAGE_RPC_SECRET in deploy/.env}
+    ports:
+      - "${S3_BIND_ADDRESS:-127.0.0.1}:${S3_PORT:-3900}:3900"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: garage_webui
+      POSTGRES_USER: garage_webui
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garage_webui -d garage_webui"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  webui:
+    image: ${GARAGE_WEBUI_IMAGE:-ghcr.io/containeroo/garage-webui:latest}
+    restart: unless-stopped
+    depends_on:
+      garage:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command:
+      [
+        "--listen-address",
+        "0.0.0.0:8080",
+        "--management-listen-address",
+        "0.0.0.0:8081",
+      ]
+    environment:
+      GARAGE_WEBUI__DATABASE_URL: postgres://garage_webui:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/garage_webui?sslmode=disable
+      GARAGE_WEBUI__GARAGE_URL: http://garage:3903
+      GARAGE_WEBUI__GARAGE_TOKEN: ${GARAGE_ADMIN_TOKEN:?Set GARAGE_ADMIN_TOKEN in deploy/.env}
+      GARAGE_WEBUI__AUTH_MODE: local
+      GARAGE_WEBUI__PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      GARAGE_WEBUI__S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:3900}
+      GARAGE_WEBUI__S3_REGION: garage
+    ports:
+      - "${WEBUI_BIND_ADDRESS:-127.0.0.1}:${WEBUI_PORT:-8080}:8080"
+
+volumes:
+  garage-meta:
+  garage-data:
+  postgres-data:
