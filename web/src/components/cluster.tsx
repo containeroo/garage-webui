@@ -364,8 +364,8 @@ export function Cluster({
                     )}
                   </select>
                 </label>
-                <Button variant="outline" disabled={busy}>
-                  Stage setting
+                <Button variant="outline" disabled={busy || !redundancy}>
+                  Stage changes
                 </Button>
               </form>
             )}
