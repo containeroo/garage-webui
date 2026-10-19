@@ -416,7 +416,7 @@ test("loads and saves the account theme", async () => {
   );
   render(<App />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /alice admin/i }));
+  await user.click(await screen.findByRole("button", { name: "My profile: alice" }));
   const select = await screen.findByLabelText("Theme");
   await vi.waitFor(() =>
     expect((select as HTMLSelectElement).value).toBe("Dark"),

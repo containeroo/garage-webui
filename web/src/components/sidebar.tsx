@@ -84,6 +84,7 @@ export function Sidebar({
           <button
             className="profile-link"
             onClick={() => onNavigate("profile")}
+            aria-label={`My profile: ${session.user}`}
             aria-current={page === "profile" ? "page" : undefined}
           >
             <span className="avatar">
