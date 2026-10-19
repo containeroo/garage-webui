@@ -164,7 +164,7 @@ func TestLocalFlow(t *testing.T) {
 	assert.Contains(t, loginPage.Body.String(), `<base href="/">`)
 	initial := httptest.NewRecorder()
 	handler.ServeHTTP(initial, httptest.NewRequest("GET", "/api/session", nil))
-	assert.JSONEq(t, `{"mode":"local","user":"","role":"","setupRequired":true,"localLogin":true,"uploadsEnabled":false}`, initial.Body.String())
+	assert.JSONEq(t, `{"mode":"local","oidcIssuer":"","user":"","role":"","setupRequired":true,"localLogin":true,"uploadsEnabled":false}`, initial.Body.String())
 	setupRequest := func(origin, password string) *http.Request {
 		req := httptest.NewRequest("POST", "/api/setup", bytes.NewBufferString(fmt.Sprintf(`{"username":"admin","password":%q}`, password)))
 		req.Header.Set("Origin", origin)
@@ -222,7 +222,7 @@ func TestLocalFlow(t *testing.T) {
 	assert.Equal(t, 1, userCount)
 	completed := httptest.NewRecorder()
 	handler.ServeHTTP(completed, httptest.NewRequest("GET", "/api/session", nil))
-	assert.JSONEq(t, `{"mode":"local","user":"","role":"","setupRequired":false,"localLogin":true,"uploadsEnabled":false}`, completed.Body.String())
+	assert.JSONEq(t, `{"mode":"local","oidcIssuer":"","user":"","role":"","setupRequired":false,"localLogin":true,"uploadsEnabled":false}`, completed.Body.String())
 	restarted, err := auth.New(ctx, postgres.New(db), testAuthConfig(cfg))
 	require.NoError(t, err)
 	needed, err := restarted.SetupRequired(ctx)
