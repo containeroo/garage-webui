@@ -41,17 +41,6 @@ services:
       timeout: 3s
       retries: 30
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1
-    command:
-      ["start-dev", "--import-realm", "--hostname=${E2E_KEYCLOAK_ORIGIN}"]
-    environment:
-      E2E_OIDC_REDIRECT_URI: ${E2E_OIDC_REDIRECT_URI}
-    ports:
-      - "127.0.0.1:${E2E_KEYCLOAK_PORT}:8080"
-    volumes:
-      - ./oidc-test-realm.json:/opt/keycloak/data/import/garage-webui-realm.json:ro
-
 volumes:
   garage-meta:
   garage-data:

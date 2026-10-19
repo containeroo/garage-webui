@@ -84,7 +84,7 @@ func TestPrepareChecksBeforeResolving(t *testing.T) {
 	signer := &signerStub{}
 	service := New(bucket, signer)
 	ctx := context.Background()
-	_, err := service.Prepare(ctx, "viewer", Request{
+	_, err := service.Prepare(ctx, "unknown", Request{
 		BucketID: "bucket",
 		Action:   "delete",
 		Key:      "file",
@@ -96,11 +96,11 @@ func TestPrepareChecksBeforeResolving(t *testing.T) {
 		Key:      "../file",
 	}, time.Time{})
 	require.ErrorIs(t, err, ErrInvalid)
-	_, err = service.PrepareUpload(ctx, "viewer", "bucket", "file", 1, time.Time{})
+	_, err = service.PrepareUpload(ctx, "unknown", "bucket", "file", 1, time.Time{})
 	require.ErrorIs(t, err, ErrForbidden)
 	assert.Zero(t, bucket.calls)
 	assert.Empty(t, signer.called)
-	_, err = service.Prepare(ctx, "viewer", Request{
+	_, err = service.Prepare(ctx, "s3", Request{
 		BucketID: "bucket",
 		Action:   "download",
 		Key:      "file",
@@ -108,10 +108,10 @@ func TestPrepareChecksBeforeResolving(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, bucket.calls)
 	assert.Equal(t, "download", signer.called)
-	_, err = service.PrepareUpload(ctx, "editor", "bucket", "file", 1, time.Time{})
+	_, err = service.PrepareUpload(ctx, "s3", "bucket", "file", 1, time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, "upload", signer.called)
-	bucket.err = errors.New("Garage unavailable")
+	bucket.err = errors.New("garage unavailable")
 	_, err = service.Prepare(ctx, "admin", Request{
 		BucketID: "bucket",
 		Action:   "list",

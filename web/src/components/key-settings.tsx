@@ -55,12 +55,12 @@ export function KeySettings({
     setBusy(true);
     setError("");
     try {
-      if (!name.trim()) throw new Error("Name is required");
+      if (!name.trim()) throw new Error("name is required");
       if (
         !never &&
         (!expiration || Number.isNaN(new Date(expiration).getTime()))
       )
-        throw new Error("Select a valid expiration date");
+        throw new Error("select a valid expiration date");
       const current = details?.permissions.createBucket || false;
       await post(
         "UpdateKey",
@@ -108,95 +108,91 @@ export function KeySettings({
 
   return (
     <div className="key-editor">
-      <div className="object-toolbar">
-        <strong>Edit access key</strong>
-        <button className="secondary" onClick={onClose}>
-          Close
-        </button>
+      <div className="editor-heading">
+        <div>
+          <h3>Edit access key</h3>
+          <p>Update key details and bucket-specific permissions.</p>
+        </div>
+        <button type="button" className="secondary" onClick={onClose}>Close</button>
       </div>
-      {error && (
-        <p className="object-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert" role="alert">{error}</p>}
       {!details ? (
-        <p>Loading…</p>
+        <p className="editor-loading" role="status">Loading key details…</p>
       ) : (
         <>
-          <code>{details.accessKeyId}</code>
-          <label>
-            Name
-            <input
-              value={name}
-              disabled={busy}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="setting-toggle">
-            <input
-              type="checkbox"
-              checked={never}
-              disabled={busy}
-              onChange={(event) => setNever(event.target.checked)}
-            />{" "}
-            Never expires
-          </label>
-          {!never && (
-            <label>
-              Expiration (local time)
-              <input
-                type="datetime-local"
-                value={expiration}
-                disabled={busy}
-                onChange={(event) => setExpiration(event.target.value)}
-              />
+          <div className="editor-section">
+            <div className="editor-section-heading">
+              <h4>Key details</h4>
+              <code title={details.accessKeyId}>{details.accessKeyId}</code>
+            </div>
+            <div className="form-grid">
+              <label>
+                Name
+                <input value={name} disabled={busy} onChange={(event) => setName(event.target.value)} />
+              </label>
+              <div className="field-stack">
+                <span className="field-label">Expiration</span>
+                <span className="field-hint">Set a date or allow the key to remain active.</span>
+                <label className="inline-check">
+                  <input type="checkbox" checked={never} disabled={busy}
+                    onChange={(event) => setNever(event.target.checked)} />
+                  Never expires
+                </label>
+                {!never && (
+                  <input aria-label="Expiration (local time)" type="datetime-local" value={expiration}
+                    disabled={busy} onChange={(event) => setExpiration(event.target.value)} />
+                )}
+              </div>
+            </div>
+            <label className="permission-toggle">
+              <input type="checkbox" checked={createBucket} disabled={busy}
+                onChange={(event) => setCreateBucket(event.target.checked)} />
+              <span>
+                <strong>Allow creating buckets</strong>
+                <small>Permit this access key to create new buckets.</small>
+              </span>
             </label>
-          )}
-          <label className="setting-toggle">
-            <input
-              type="checkbox"
-              checked={createBucket}
-              disabled={busy}
-              onChange={(event) => setCreateBucket(event.target.checked)}
-            />{" "}
-            Allow creating buckets
-          </label>
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => void save()}
-          >
-            <Save size={15} /> Save key
-          </button>
-          <h4>Bucket permissions</h4>
-          {details.buckets?.length ? (
-            details.buckets.map((bucket) => (
-              <div className="bucket-setting-group" key={bucket.id}>
-                <strong>{bucket.globalAliases?.[0] || bucket.id}</strong>
-                {(["read", "write", "owner"] as const).map((permission) => (
-                  <label className="setting-toggle" key={permission}>
-                    <input
-                      type="checkbox"
-                      checked={bucket.permissions[permission]}
-                      disabled={busy}
-                      onChange={(event) =>
-                        void updatePermissions(
-                          bucket,
-                          permission,
-                          event.target.checked,
-                        )
-                      }
-                    />
-                    {permission}
-                  </label>
+            <div className="editor-actions">
+              <button type="button" className="primary" disabled={busy || !name.trim()}
+                onClick={() => void save()}>
+                <Save size={15} /> {busy ? "Saving…" : "Save key"}
+              </button>
+            </div>
+          </div>
+
+          <div className="editor-section">
+            <div className="editor-section-heading">
+              <div>
+                <h4>Bucket permissions</h4>
+                <p>Changes to these permissions take effect immediately.</p>
+              </div>
+            </div>
+            {details.buckets?.length ? (
+              <div className="permission-table">
+                <div className="permission-header" aria-hidden="true">
+                  <span>Bucket</span><span>Read</span><span>Write</span><span>Owner</span>
+                </div>
+                {details.buckets.map((bucket) => (
+                  <div className="permission-row" key={bucket.id}>
+                    <div className="permission-bucket" title={bucket.globalAliases?.[0] || bucket.id}>
+                      <strong>{bucket.globalAliases?.[0] || bucket.id}</strong>
+                      <small>{bucket.id}</small>
+                    </div>
+                    {(["read", "write", "owner"] as const).map((permission) => (
+                      <label className="permission-cell" key={permission}>
+                        <input type="checkbox" checked={bucket.permissions[permission]} disabled={busy}
+                          aria-label={`${permission} ${bucket.globalAliases?.[0] || bucket.id}`}
+                          onChange={(event) => void updatePermissions(bucket, permission, event.target.checked)} />
+                        <span className="mobile-permission-label">{permission}</span>
+                      </label>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))
-          ) : (
-            <small>
-              No bucket permissions. Add access from a bucket's details.
-            </small>
-          )}
+            ) : (
+              <p className="editor-empty">No bucket permissions yet. Grant access from a bucket's details.</p>
+            )}
+          </div>
         </>
       )}
     </div>

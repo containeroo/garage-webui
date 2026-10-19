@@ -2,107 +2,109 @@ import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Brand } from "./components/brand";
 import { errorMessage, request, type Session } from "./api";
-
 export function Login({
-  session,
   onLogin,
 }: {
   session: Session;
-  onLogin: (s: Session) => void;
+  onLogin: (session: Session) => void;
 }) {
+  const [kind, setKind] = useState("admin");
   const [error, setError] = useState("");
-  const setup = session.mode === "local" && session.setupRequired;
-  const recoveryPage =
-    window.location.pathname === new URL("login", document.baseURI).pathname;
-  const showLocal =
-    session.localLogin && (session.mode === "local" || recoveryPage);
+  const [busy, setBusy] = useState(false);
   return (
     <div className="login-page">
       <div className="login-card">
         <Brand className="login-brand" />
-        <h1>{setup ? "Create administrator" : "Sign in"}</h1>
+        <h1>Sign in to Garage</h1>
+        <div className="bucket-tabs" role="tablist" aria-label="Sign-in method">
+          {[
+            ["admin", "Admin token"],
+            ["s3", "S3 credentials"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={kind === value}
+              onClick={() => {
+                setKind(value);
+                setError("");
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {error && (
           <div className="alert" role="alert">
             {error}
           </div>
         )}
-        {session.mode === "oidc" && !recoveryPage && (
-          <a
-            className="primary full"
-            href={new URL("auth/login", document.baseURI).toString()}
-          >
-            Continue with your identity provider <ArrowRight size={16} />
-          </a>
-        )}
-        {showLocal && (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const data = new FormData(e.currentTarget);
-              if (setup && data.get("password") !== data.get("confirmation")) {
-                setError("Passwords do not match.");
-                return;
-              }
-              try {
-                await request(setup ? "api/setup" : "api/login", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    username: data.get("username"),
-                    password: data.get("password"),
-                  }),
-                });
-                const currentSession = await request<Session>("api/session");
-                window.history.replaceState(
-                  null,
-                  "",
-                  new URL(".", document.baseURI),
-                );
-                onLogin(currentSession);
-              } catch (err) {
-                setError(errorMessage(err));
-              }
-            }}
-          >
+        <form
+          key={kind}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            setError("");
+            const data = new FormData(event.currentTarget);
+            try {
+              await request("api/login", {
+                method: "POST",
+                body: JSON.stringify(
+                  kind === "admin"
+                    ? { kind, token: data.get("token") }
+                    : {
+                        kind,
+                        accessKeyId: data.get("accessKeyId"),
+                        secretAccessKey: data.get("secretAccessKey"),
+                      },
+                ),
+              });
+              onLogin(await request<Session>("api/session"));
+            } catch (error) {
+              setError(errorMessage(error));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {kind === "admin" ? (
             <label>
-              Username
-              <input name="username" autoComplete="username" required />
-            </label>
-            <label>
-              Password
+              Admin token
               <input
+                name="token"
                 type="password"
-                name="password"
-                autoComplete={setup ? "new-password" : "current-password"}
-                minLength={setup ? 12 : undefined}
+                autoComplete="current-password"
                 required
               />
             </label>
-            {setup && (
+          ) : (
+            <>
               <label>
-                Confirm password
+                Access key ID
+                <input name="accessKeyId" autoComplete="username" required />
+              </label>
+              <label>
+                Secret access key
                 <input
+                  name="secretAccessKey"
                   type="password"
-                  name="confirmation"
-                  autoComplete="new-password"
-                  minLength={12}
+                  autoComplete="current-password"
                   required
                 />
               </label>
-            )}
-            <button className="primary full">
-              {setup ? "Create administrator" : "Sign in"}{" "}
-              <ArrowRight size={16} />
-            </button>
-          </form>
-        )}
-        {session.mode !== "local" && session.localLogin && !recoveryPage && (
-          <a
-            className="text-button"
-            href={new URL("login", document.baseURI).toString()}
-          >
-            Local sign in <ArrowRight size={16} />
-          </a>
-        )}
+            </>
+          )}
+          <p className="settings-note">
+            {kind === "admin"
+              ? "Use a Garage admin token. Its scopes determine your access."
+              : "Use an S3 key to browse its accessible buckets. Garage enforces read and write permissions."}
+          </p>
+          <button className="primary full" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+            <ArrowRight size={16} />
+          </button>
+        </form>
       </div>
     </div>
   );

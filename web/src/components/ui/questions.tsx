@@ -21,7 +21,7 @@ type Ask = {
 const QuestionContext = createContext<Ask | null>(null);
 export function useQuestions(): Ask {
   const context = useContext(QuestionContext);
-  if (!context) throw new Error("Question provider missing");
+  if (!context) throw new Error("question provider missing");
   return context;
 }
 export function QuestionProvider({ children }: { children: ReactNode }) {

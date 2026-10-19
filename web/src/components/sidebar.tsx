@@ -5,9 +5,9 @@ import {
   LayoutDashboard,
   LogOut,
   Server,
-  Users,
+  ShieldCheck,
 } from "lucide-react";
-import type { Health, Page, Session } from "../api";
+import { allows, type Health, type Page, type Session } from "../api";
 import { Brand } from "./brand";
 
 // Sidebar contains the main navigation and the current account.
@@ -36,50 +36,60 @@ export function Sidebar({
             ["buckets", Database, "Buckets"],
             ["keys", KeyRound, "Access keys"],
           ] as const
-        ).map(([id, Icon, label]) => (
+        )
+          .filter(
+            ([id]) =>
+              id === "buckets" ||
+              (id === "overview" && session.mode === "admin") ||
+              (id === "cluster" && allows(session, "GetClusterStatus")) ||
+              (id === "keys" && allows(session, "ListKeys")),
+          )
+          .map(([id, Icon, label]) => (
+            <button
+              key={id}
+              className={page === id ? "active" : ""}
+              aria-current={page === id ? "page" : undefined}
+              onClick={() => {
+                onNavigate(id);
+              }}
+            >
+              <Icon size={17} />
+              {label}
+              {page === id && <ChevronRight size={15} className="nav-arrow" />}
+            </button>
+          ))}
+        {allows(session, "ListAdminTokens") && (
           <button
-            key={id}
-            className={page === id ? "active" : ""}
-            aria-current={page === id ? "page" : undefined}
+            className={page === "tokens" ? "active" : ""}
+            aria-current={page === "tokens" ? "page" : undefined}
             onClick={() => {
-              onNavigate(id);
+              onNavigate("tokens");
             }}
           >
-            <Icon size={17} />
-            {label}
-            {page === id && <ChevronRight size={15} className="nav-arrow" />}
-          </button>
-        ))}
-        {session.role === "admin" && (
-          <button
-            className={page === "users" ? "active" : ""}
-            aria-current={page === "users" ? "page" : undefined}
-            onClick={() => {
-              onNavigate("users");
-            }}
-          >
-            <Users size={17} />
-            Users
-            {page === "users" && (
+            <ShieldCheck size={17} />
+            Admin tokens
+            {page === "tokens" && (
               <ChevronRight size={15} className="nav-arrow" />
             )}
           </button>
         )}
       </nav>
       <div className="sidebar-bottom">
-        <div className="sidebar-status">
-          <span
-            className={`dot ${health?.status === "healthy" ? "" : "warning"}`}
-          />
-          <div>
-            <strong>
-              {health?.status === "healthy"
-                ? "System operational"
-                : "System status"}
-            </strong>
-            <small>{health?.status || "Unavailable"}</small>
+        {session.mode === "admin" && (
+          <div className="sidebar-status">
+            <span
+              className={`dot ${health?.status === "healthy" ? "" : "warning"}`}
+            />
+            <div>
+              <strong>
+                {health?.status === "healthy"
+                  ? "System operational"
+                  : "System status"}
+              </strong>
+              <small>{health?.status || "Unavailable"}</small>
+            </div>
           </div>
-        </div>
+        )}
         <div className="profile">
           <button
             className="profile-link"
@@ -92,14 +102,14 @@ export function Sidebar({
             </span>
             <span>
               <strong>{session.user}</strong>
-              <small>{session.role}</small>
+              <small>{session.mode}</small>
             </span>
           </button>
-          {(session.mode !== "proxy" || session.localLogin) && (
+          {
             <button title="Sign out" aria-label="Sign out" onClick={onSignOut}>
               <LogOut size={16} />
             </button>
-          )}
+          }
         </div>
       </div>
     </aside>

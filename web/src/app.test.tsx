@@ -3,17 +3,15 @@ import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./app";
-import { UserManagement } from "./users";
 import { BucketObjects } from "./components/objects";
 import { QuestionProvider } from "./components/ui/questions";
 import * as s3 from "./s3";
 
 const session = (user: string) => ({
-  mode: "local",
+  mode: "admin",
+  scope: ["*"],
   user,
   role: "admin",
-  setupRequired: false,
-  localLogin: true,
   uploadsEnabled: false,
 });
 const json = (value: unknown, status = 200) =>
@@ -62,10 +60,12 @@ test("allows retrying a failed initial session request", async () => {
   );
   render(<App />);
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "Could not connect",
+    "could not connect",
   );
   await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+  expect(
+    await screen.findByRole("heading", { name: "Sign in to Garage" }),
+  ).toBeTruthy();
 });
 
 test("overview lists each bucket once with its usage and links to all buckets", async () => {
@@ -136,11 +136,11 @@ test("keeps action errors visible inside the open dialog", async () => {
   await user.type(within(dialog).getByLabelText("Name"), "existing");
   await user.click(within(dialog).getByRole("button", { name: "Create" }));
   expect((await within(dialog).findByRole("alert")).textContent).toContain(
-    "Bucket already exists",
+    "bucket already exists",
   );
 });
 
-test("late responses from a signed-out account cannot populate the next workspace", async () => {
+test("late responses from a signed-out credential cannot populate the next workspace", async () => {
   let currentUser = "alice";
   let releaseOldBuckets!: (response: Response) => void;
   let oldBucketsRequested!: () => void;
@@ -174,8 +174,7 @@ test("late responses from a signed-out account cannot populate the next workspac
   await screen.findByRole("button", { name: "Sign out" });
   await oldRequestStarted;
   await user.click(screen.getByRole("button", { name: "Sign out" }));
-  await user.type(await screen.findByLabelText("Username"), "bob");
-  await user.type(screen.getByLabelText("Password"), "password");
+  await user.type(await screen.findByLabelText("Admin token"), "bob-token");
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await screen.findByText("bob");
   await act(async () => {
@@ -188,7 +187,7 @@ test("late responses from a signed-out account cannot populate the next workspac
   expect(screen.queryByText("alice-secret")).toBeNull();
 });
 
-test("clears loaded data when signing in as another account", async () => {
+test("clears loaded data when signing in as another credential", async () => {
   let currentUser = "alice";
   vi.stubGlobal(
     "fetch",
@@ -214,71 +213,14 @@ test("clears loaded data when signing in as another account", async () => {
   await user.click(await screen.findByRole("button", { name: "Buckets" }));
   expect(await screen.findByText("alice-secret")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Sign out" }));
-  await user.type(await screen.findByLabelText("Username"), "bob");
-  await user.type(screen.getByLabelText("Password"), "password");
+  await user.type(await screen.findByLabelText("Admin token"), "bob-token");
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await screen.findByText("bob");
   await user.click(screen.getByRole("button", { name: "Buckets" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "Storage unavailable",
+    "storage unavailable",
   );
   expect(screen.queryByText("alice-secret")).toBeNull();
-});
-
-test("user management uses accessible modals and keeps errors inside them", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const path = String(input);
-      if (path.endsWith("/api/session")) return json(session("alice"));
-      if (path.endsWith("/api/users") && options?.method === "POST")
-        return json({ error: "Account already exists" }, 409);
-      if (path.endsWith("/api/users"))
-        return json([
-          {
-            username: "alice",
-            role: "admin",
-            email: "",
-            displayName: "",
-            groups: [],
-            externalGroups: [],
-            identities: [],
-            enabled: true,
-            hasPassword: true,
-            localCredentialEnabled: true,
-          },
-        ]);
-      if (path.endsWith("/api/registration")) return json({ enabled: false });
-      if (
-        path.endsWith("/api/pending-identities") ||
-        path.endsWith("/api/groups") ||
-        path.endsWith("/api/group-mappings") ||
-        path.includes("ListBuckets") ||
-        path.includes("ListKeys")
-      )
-        return json([]);
-      return json({ status: "healthy" });
-    }),
-  );
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Users" }));
-  const create = await screen.findByRole("button", { name: "Create user" });
-  await user.click(create);
-  const dialog = screen.getByRole("dialog", { name: "Create user" });
-  await user.type(within(dialog).getByLabelText("Username"), "existing");
-  await user.click(within(dialog).getByRole("button", { name: "Create user" }));
-  expect((await within(dialog).findByRole("alert")).textContent).toContain(
-    "Account already exists",
-  );
-  await user.keyboard("{Escape}");
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(document.activeElement).toBe(create);
-  const manage = screen.getByRole("button", { name: "Manage" });
-  await user.click(manage);
-  expect(screen.getByRole("dialog", { name: "Manage alice" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Close dialog" }));
-  expect(document.activeElement).toBe(manage);
 });
 
 test("custom confirmation waits for a choice and cancellation does not run the action", async () => {
@@ -374,7 +316,7 @@ test("stages a node assignment with the chosen capacity unit", async () => {
   );
 });
 
-test("loads and saves the account theme", async () => {
+test("loads and saves the session theme", async () => {
   const calls: { path: string; body?: string }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -440,105 +382,3 @@ test("loads and saves the account theme", async () => {
     ).toBeTruthy(),
   );
 });
-
-test.each([
-  { managed: true, enabled: true },
-  { managed: true, enabled: false },
-  { managed: false, enabled: true },
-])(
-  "registration policy reflects deployment control",
-  async ({ managed, enabled }) => {
-    const request = vi.fn(async (path: string) =>
-      path === "api/registration" ? { enabled, managed } : [],
-    );
-    render(
-      <QuestionProvider>
-        <UserManagement
-          request={request as never}
-          currentUser="admin"
-          mode="oidc"
-          localLogin={false}
-          oidcIssuer="https://identity.example"
-        />
-      </QuestionProvider>,
-    );
-    const toggle = (await screen.findByRole("checkbox", {
-      name: "Enabled",
-    })) as HTMLInputElement;
-    await vi.waitFor(() => expect(toggle.checked).toBe(enabled));
-    expect(toggle.disabled).toBe(managed);
-    expect(screen.queryByText(/Managed by deployment/) !== null).toBe(managed);
-  },
-);
-
-test.each([
-  { mode: "oidc", localLogin: false },
-  { mode: "proxy", localLogin: true },
-  { mode: "local", localLogin: true },
-])(
-  "user sign-in settings follow $mode authentication",
-  async ({ mode, localLogin }) => {
-    const account = {
-      username: "alice",
-      role: "admin",
-      email: "",
-      displayName: "",
-      groups: [],
-      externalGroups: [],
-      identities: [
-        {
-          provider: "oidc",
-          issuer: "https://identity.example",
-          subject: "active-subject",
-        },
-        {
-          provider: "oidc",
-          issuer: "https://old.example",
-          subject: "old-subject",
-        },
-        { provider: "proxy", issuer: "", subject: "proxy-user" },
-      ],
-      enabled: true,
-      hasPassword: true,
-      localCredentialEnabled: true,
-    };
-    const request = vi.fn(async (path: string) => {
-      if (path === "api/users") return [account];
-      if (path === "api/registration") return { enabled: false };
-      return [];
-    });
-    const user = userEvent.setup();
-    render(
-      <QuestionProvider>
-        <UserManagement
-          request={request as never}
-          currentUser="alice"
-          mode={mode}
-          localLogin={localLogin}
-          oidcIssuer="https://identity.example"
-        />
-      </QuestionProvider>,
-    );
-    await user.click(await screen.findByRole("button", { name: "Manage" }));
-    const dialog = screen.getByRole("dialog", { name: "Manage alice" });
-    expect(within(dialog).queryByText(/old-subject/)).toBeNull();
-    expect(within(dialog).queryByText(/active-subject/) !== null).toBe(
-      mode === "oidc",
-    );
-    expect(within(dialog).queryByText(/proxy-user/) !== null).toBe(
-      mode === "proxy",
-    );
-    expect(within(dialog).queryByLabelText("Provider")).toBeNull();
-    expect(within(dialog).queryByLabelText("OIDC subject")).toBeNull();
-    expect(within(dialog).queryByLabelText("Proxy username") !== null).toBe(
-      mode === "proxy",
-    );
-    expect(within(dialog).queryByLabelText("Set local password") !== null).toBe(
-      localLogin,
-    );
-    if (!localLogin)
-      expect(
-        within(dialog).getByText(/Local password sign-in is disabled/),
-      ).toBeTruthy();
-  },
-);

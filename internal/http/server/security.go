@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gi8lino/garage-webui/internal/http/auth"
-	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/http/auth"
+	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
 
 // validMutation rejects cross-origin and non-JSON writes.

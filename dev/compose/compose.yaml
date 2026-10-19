@@ -59,8 +59,7 @@ services:
     environment:
       GARAGE_WEBUI__DATABASE_URL: postgres://garage_webui:local-database-password@postgres:5432/garage_webui?sslmode=disable
       GARAGE_WEBUI__GARAGE_URL: http://garage:3903
-      GARAGE_WEBUI__GARAGE_TOKEN: local-garage-admin-token
-      GARAGE_WEBUI__AUTH_MODE: local
+      GARAGE_WEBUI__SESSION_SECRET: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
       GARAGE_WEBUI__PUBLIC_URL: http://localhost:8080
       GARAGE_WEBUI__S3_PUBLIC_URL: http://localhost:3900
       GARAGE_WEBUI__S3_REGION: garage

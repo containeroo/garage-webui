@@ -10,16 +10,13 @@ import (
 	"sync"
 	"time"
 
-	applicationgarage "github.com/gi8lino/garage-webui/internal/application/garage"
-	"github.com/gi8lino/garage-webui/internal/application/objects"
-	"github.com/gi8lino/garage-webui/internal/flags"
-	"github.com/gi8lino/garage-webui/internal/garage"
-	"github.com/gi8lino/garage-webui/internal/garage/credentials"
-	"github.com/gi8lino/garage-webui/internal/http/auth"
-	"github.com/gi8lino/garage-webui/internal/http/server"
-	"github.com/gi8lino/garage-webui/internal/postgres"
-	"github.com/gi8lino/garage-webui/internal/s3"
-	"github.com/gi8lino/garage-webui/themes"
+	"github.com/containeroo/garage-webui/internal/assembly"
+	"github.com/containeroo/garage-webui/internal/flags"
+	"github.com/containeroo/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/server"
+	"github.com/containeroo/garage-webui/internal/postgres"
+	"github.com/containeroo/garage-webui/internal/s3"
+	"github.com/containeroo/garage-webui/themes"
 )
 
 // Application owns initialized services and HTTP handlers.
@@ -36,49 +33,39 @@ func New(ctx context.Context, cfg flags.Config, logger *slog.Logger, assets, the
 	if err != nil {
 		return nil, fmt.Errorf("load themes: %w", err)
 	}
-	client, err := garage.New(cfg.GarageURL, cfg.GarageToken)
-	if err != nil {
-		return nil, err
-	}
 
 	db, err := postgres.Open(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.MinIdleConns, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	keys := credentials.New(client, db, cfg.Server.PublicURL)
-	uploader, err := s3.NewManager(keys, cfg.S3PublicURL, cfg.S3Region, cfg.Server.PublicURL)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	authentication, err := auth.New(ctx, db, auth.Config{
-		PublicURL:      cfg.Server.PublicURL,
-		RoutePrefix:    cfg.Server.RoutePrefix,
-		Authentication: cfg.Authentication,
-		Proxy:          cfg.Proxy,
-		OIDC:           cfg.OIDC,
+	authentication, err := auth.New(db, auth.Config{
+		PublicURL:     cfg.Server.PublicURL,
+		RoutePrefix:   cfg.Server.RoutePrefix,
+		GarageURL:     cfg.GarageURL,
+		S3URL:         cfg.S3PublicURL,
+		Region:        cfg.S3Region,
+		SessionSecret: cfg.SessionSecret,
 	})
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	var objectService *objects.Service
-	var origin string
-	if uploader != nil {
-		objectService = objects.New(client, uploader)
-		origin = uploader.Origin()
+	if cfg.S3PublicURL != "" {
+		if _, err := s3.New(cfg.S3PublicURL, cfg.S3Region, "validation", "validation", cfg.Server.PublicURL); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 
 	app := &Application{
 		db: db,
 		server: server.New(
-			applicationgarage.New(client),
 			authentication,
-			objectService,
-			origin,
+			assembly.New(authentication, db, cfg.Server.PublicURL),
+			db,
+			cfg.S3PublicURL,
 			cfg.Server.PublicURL,
 			cfg.Server.RoutePrefix,
 			logger,
@@ -96,10 +83,15 @@ func New(ctx context.Context, cfg flags.Config, logger *slog.Logger, assets, the
 		for {
 			cleanupTimeout, cancel := context.WithTimeout(cleanupCtx, 30*time.Second)
 			err := db.CleanupExpiredAuth(cleanupTimeout)
+			if limitErr := db.CleanupExpiredLoginAttempts(cleanupTimeout); limitErr != nil && cleanupCtx.Err() == nil {
+				logger.Warn("login limiter cleanup failed", "error", limitErr)
+			}
+
 			cancel()
 			if err != nil && cleanupCtx.Err() == nil {
 				logger.Warn("authentication record cleanup failed", "error", err)
 			}
+
 			select {
 			case <-cleanupCtx.Done():
 				return

@@ -1,15 +1,16 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"regexp"
-	"sort"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -18,9 +19,6 @@ import (
 //
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
-
-// migrationName identifies ordered migration files.
-var migrationName = regexp.MustCompile(`^([0-9]+)_[a-z0-9_]+\.sql$`)
 
 // migration describes one schema change.
 type migration struct {
@@ -39,24 +37,17 @@ func loadMigrations(source fs.FS) ([]migration, error) {
 		return nil, fmt.Errorf("read migrations: %w", err)
 	}
 
-	var migrations []migration
-	seen := make(map[int64]bool)
+	migrations := make([]migration, 0, len(entries))
 	for _, entry := range entries {
-		matches := migrationName.FindStringSubmatch(entry.Name())
-		if entry.IsDir() || matches == nil {
-			return nil, fmt.Errorf("invalid migration name %q", entry.Name())
+		if !isMigrationFile(entry) {
+			continue
 		}
 
-		version, err := strconv.ParseInt(matches[1], 10, 64)
-		if err != nil || version <= 0 {
-			return nil, fmt.Errorf("invalid migration version in %q", entry.Name())
+		version, err := migrationVersion(entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("invalid migration %q: %w", entry.Name(), err)
 		}
 
-		if seen[version] {
-			return nil, fmt.Errorf("duplicate migration version %d", version)
-		}
-
-		seen[version] = true
 		data, err := fs.ReadFile(source, "migrations/"+entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("read migration %q: %w", entry.Name(), err)
@@ -73,8 +64,41 @@ func loadMigrations(source fs.FS) ([]migration, error) {
 		return nil, errors.New("no database migrations found")
 	}
 
-	sort.Slice(migrations, func(i, j int) bool { return migrations[i].version < migrations[j].version })
+	slices.SortFunc(migrations, func(a, b migration) int {
+		return cmp.Compare(a.version, b.version)
+	})
+
+	for index := 1; index < len(migrations); index++ {
+		if migrations[index-1].version == migrations[index].version {
+			return nil, fmt.Errorf("duplicate migration version %d", migrations[index].version)
+		}
+	}
+
 	return migrations, nil
+}
+
+// isMigrationFile selects regular SQL files from the migrations directory.
+func isMigrationFile(entry fs.DirEntry) bool {
+	return entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".sql")
+}
+
+// migrationVersion extracts a positive numeric prefix from a SQL migration filename.
+func migrationVersion(name string) (int64, error) {
+	prefix, suffix, ok := strings.Cut(name, "_")
+	if !ok || suffix == ".sql" || !strings.HasSuffix(suffix, ".sql") {
+		return 0, errors.New("expected version_description.sql")
+	}
+
+	version, err := strconv.ParseInt(prefix, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse version: %w", err)
+	}
+
+	if version <= 0 {
+		return 0, errors.New("migration version must be positive")
+	}
+
+	return version, nil
 }
 
 // Migrate applies pending schema changes atomically.

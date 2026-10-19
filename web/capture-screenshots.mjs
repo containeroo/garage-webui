@@ -13,12 +13,8 @@ try {
     deviceScaleFactor: 1,
   });
   await page.goto(process.env.SCREENSHOT_URL);
-  await page.getByLabel("Username").fill("admin");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("documentation-password");
-  await page.getByLabel("Confirm password").fill("documentation-password");
-  await page.getByRole("button", { name: "Create administrator" }).click();
+  await page.getByLabel("Admin token").fill(process.env.E2E_ADMIN_TOKEN);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByRole("button", { name: "Buckets", exact: true }).click();
 
   for (const name of ["project-assets", "team-backups", "website-media"]) {

@@ -45,7 +45,7 @@ export function Usage({
               typeof item.objects !== "number",
           )
         )
-          throw new Error("Invalid usage data");
+          throw new Error("invalid usage data");
         if (!cancelled) {
           setData(value);
           onTotals({

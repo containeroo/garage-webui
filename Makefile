@@ -1,7 +1,6 @@
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose -p garage-webui-dev -f dev/compose/compose.yaml
-OIDC_COMPOSE := docker compose -p garage-webui-oidc-test -f dev/compose/compose.oidc.yaml
 ROUTE_PREFIX ?=
 
 # renovate: datasource=github-releases depName=kumbuka-me/cli
@@ -77,18 +76,12 @@ build: frontend ## Build the frontend and application binary.
 dev-up: ## Start Garage and PostgreSQL for local development.
 	$(COMPOSE) up -d --wait garage postgres
 	$(COMPOSE) run --rm --no-deps garage-ready
-
-oidc-provider-up: ## Start the disposable local Keycloak test provider.
-	$(OIDC_COMPOSE) up -d
-
-oidc-provider-down: ## Stop and remove the disposable Keycloak test provider and its ephemeral data.
-	$(OIDC_COMPOSE) down
+	@curl --fail --silent --show-error -o /dev/null -H "Authorization: Bearer local-garage-admin-token" http://localhost:3903/v2/GetCurrentAdminTokenInfo || { echo "Garage Admin API token verification failed: inspect docker compose logs garage" >&2; exit 1; }
 
 run: dev-up frontend ## Run the application locally.
 	GARAGE_WEBUI__DATABASE_URL='postgres://garage_webui:local-database-password@localhost:5432/garage_webui?sslmode=disable' \
 	GARAGE_WEBUI__GARAGE_URL='http://localhost:3903' \
-	GARAGE_WEBUI__GARAGE_TOKEN='local-garage-admin-token' \
-	GARAGE_WEBUI__AUTH_MODE='local' \
+	GARAGE_WEBUI__SESSION_SECRET='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
 	GARAGE_WEBUI__PUBLIC_URL='http://localhost:8080' \
 	GARAGE_WEBUI__S3_PUBLIC_URL='http://localhost:3900' \
 	GARAGE_WEBUI__ROUTE_PREFIX='$(ROUTE_PREFIX)' \
@@ -142,5 +135,3 @@ golangci-lint: $(GO_INSTALL_TOOL) ## Download golangci-lint locally if necessary
 		--target "$(GOLANGCI_LINT)" \
 		--package github.com/golangci/golangci-lint/v2/cmd/golangci-lint \
 		--tool-version "$(GOLANGCI_LINT_VERSION)"
-
-

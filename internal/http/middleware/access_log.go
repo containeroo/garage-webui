@@ -15,8 +15,10 @@ func (s *Policies) AccessLogger() httpkitmiddleware.Middleware {
 			if status == 0 {
 				status = http.StatusOK
 			}
+
 			return []any{"status", status}
 		}
+
 		return nil
 	})
 }

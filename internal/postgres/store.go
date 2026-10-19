@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Store implements account, authentication and group persistence.
+// Store persists credential sessions and bucket signing-key identifiers.
 type Store struct {
 	// db owns the connection pool.
 	db *pgxpool.Pool

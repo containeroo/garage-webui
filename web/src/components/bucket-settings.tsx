@@ -10,7 +10,7 @@ function nonnegativeLimit(value: string): number | null {
   if (!value.trim()) return null;
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0)
-    throw new Error("Enter a nonnegative whole number");
+    throw new Error("enter a nonnegative whole number");
   return number;
 }
 
@@ -81,10 +81,10 @@ export function BucketSettings({
       const expiration = nonnegativeLimit(expireDays);
       const abort = nonnegativeLimit(abortDays);
       if (!ruleId.trim() || rules.some((rule) => rule.ID === ruleId.trim()))
-        throw new Error("Rule ID must be unique");
+        throw new Error("rule ID must be unique");
       if (!expiration && !abort)
         throw new Error(
-          "Specify an expiration or incomplete-upload cleanup period",
+          "specify an expiration or incomplete-upload cleanup period",
         );
       const next: LifecycleRule = { ID: ruleId.trim(), Status: "Enabled" };
       if (rulePrefix.trim()) next.Filter = { Prefix: rulePrefix.trim() };

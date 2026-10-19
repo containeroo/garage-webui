@@ -6,20 +6,26 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gi8lino/garage-webui/internal/application/objects"
-	"github.com/gi8lino/garage-webui/internal/http/middleware"
-	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
-	"github.com/gi8lino/garage-webui/internal/s3"
+	"github.com/containeroo/garage-webui/internal/application/objects"
+	"github.com/containeroo/garage-webui/internal/http/middleware"
+	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/s3"
 )
 
-// presignUpload authorizes an editor and issues a short-lived, object-scoped URL.
+// presignUpload authorizes Garage credentials and issues a short-lived, object-scoped URL.
 // Only metadata passes through the backend; file bytes go directly to the S3 API.
 func (s *Server) presignUpload(w http.ResponseWriter, r *http.Request) {
 	id, _ := middleware.RequestIdentity(r)
-	role := id.Role
+	kind := id.Credential.Kind
 
-	if s.objects == nil {
-		httpresponse.Error(w, "direct uploads require the Garage S3 endpoint to be configured", http.StatusServiceUnavailable)
+	service, err := s.objectService(id)
+	if errors.Is(err, objects.ErrForbidden) {
+		httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
+		return
+	}
+
+	if err != nil {
+		httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -35,7 +41,7 @@ func (s *Server) presignUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.objects.PrepareUpload(r.Context(), role, input.BucketID, input.Key, input.Size, time.Now())
+	result, err := service.PrepareUpload(r.Context(), kind, input.BucketID, input.Key, input.Size, time.Now())
 	if errors.Is(err, objects.ErrForbidden) {
 		httpresponse.Error(w, "upload permissions required", http.StatusForbidden)
 		return
@@ -52,8 +58,12 @@ func (s *Server) presignUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		s.logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
+		if s.logger != nil {
+			s.logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
+		}
+
 		httpresponse.Error(w, "cannot prepare Garage upload", http.StatusBadGateway)
+
 		return
 	}
 

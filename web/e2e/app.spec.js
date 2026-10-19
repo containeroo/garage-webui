@@ -2,171 +2,225 @@ import { test, expect } from "@playwright/test";
 import { mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-const password = "end-to-end-password";
 const origin = new URL(process.env.E2E_BASE_URL).origin;
 const headers = { Origin: origin, "Content-Type": "application/json" };
-const bucket = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const bucket = `e2e-${Date.now()}`;
 let administratorCookies;
-
-async function login(page, username) {
+async function login(page, token = process.env.E2E_ADMIN_TOKEN) {
   await page.goto("./");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByLabel("Admin token").fill(token);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 }
-
-test.describe.serial("local authentication and storage", () => {
-  test("first setup creates an administrator and rejects a second setup", async ({
+// confirmAdminTokenPrivileges accepts the explicit escalation warning for admin tokens.
+async function confirmAdminTokenPrivileges(page) {
+  const dialog = page.getByRole("dialog", { name: "Please confirm" });
+  await expect(dialog).toContainText(
+    "This token can grant full Garage administration permissions.",
+  );
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
+async function garage(operation, body, query = "") {
+  const response = await fetch(
+    `${process.env.E2E_GARAGE_URL}/v2/${operation}${query}`,
+    {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${process.env.E2E_ADMIN_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    },
+  );
+  expect(response.ok, await response.clone().text()).toBeTruthy();
+  const text = await response.text();
+  return text ? JSON.parse(text) : undefined;
+}
+test.describe.serial("Garage credentials and storage", () => {
+  test("signs in with an admin token and creates a bucket", async ({
     page,
   }) => {
-    await page.goto("./");
-    await expect(
-      page.getByRole("heading", { name: "Create administrator" }),
-    ).toBeVisible();
-    await page.getByLabel("Username").fill("e2e-admin");
-    await page.getByLabel("Password", { exact: true }).fill(password);
-    await page.getByLabel("Confirm password").fill(password);
-    await page.getByRole("button", { name: "Create administrator" }).click();
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await login(page);
     administratorCookies = await page.context().cookies();
-    const setup = await page.request.post("api/setup", {
-      headers,
-      data: { username: "second", password },
-    });
-    expect(setup.status()).toBe(409);
-    const create = await page.request.post("api/users", {
-      headers,
-      data: { username: "e2e-viewer", password },
-    });
-    expect(create.status()).toBe(204);
-    const role = await page.request.put("api/users/e2e-viewer/profile", {
-      headers,
-      data: { role: "viewer", email: "", displayName: "" },
-    });
-    expect(role.status()).toBe(204);
-  });
-
-  test("enforces viewer authorization and revokes the signed-out session", async ({
-    page,
-  }) => {
-    await login(page, "e2e-admin");
-    await page.getByRole("button", { name: "Buckets" }).click();
+    await page.getByRole("button", { name: "Buckets", exact: true }).click();
     await page.getByRole("button", { name: "Create bucket" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Name").fill(bucket);
     await dialog.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(dialog).toBeHidden();
     await expect(page.getByText(bucket).first()).toBeVisible();
+  });
+  test("creates, edits and revokes a named admin token through custom dialogs", async ({
+    page,
+  }) => {
+    await login(page);
+    await page
+      .getByRole("button", { name: "Admin tokens", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Create token" }).click();
+    let dialog = page.getByRole("dialog", { name: "Create admin token" });
+    await dialog.getByLabel("Name", { exact: true }).fill("operator-test");
+    await dialog.getByLabel("All operations").check();
+    await dialog
+      .getByRole("button", { name: "Create token", exact: true })
+      .click();
+    await confirmAdminTokenPrivileges(page);
+    dialog = page.getByRole("dialog", { name: "Save your admin token" });
+    const token = await dialog.getByLabel("Secret token").inputValue();
+    expect(token.length).toBeGreaterThan(20);
+    await dialog.getByRole("button", { name: "Done", exact: true }).click();
+    const row = page.locator(".table-row").filter({ hasText: "operator-test" });
+    await row.getByTitle("Edit token").click();
+    dialog = page.getByRole("dialog", { name: "Edit admin token" });
+    await dialog.getByLabel("Name", { exact: true }).fill("operator-renamed");
+    await dialog.getByRole("button", { name: "Save token" }).click();
+    await confirmAdminTokenPrivileges(page);
+    await expect(dialog).toBeHidden();
     await page.getByRole("button", { name: "Sign out" }).click();
-    await page.getByLabel("Username").fill("e2e-viewer");
-    await page.getByLabel("Password", { exact: true }).fill(password);
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByText("e2e-viewer")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Users" })).toHaveCount(0);
-    expect((await page.request.get("api/users")).status()).toBe(403);
+    await login(page, token);
+    await expect(page.getByText("operator-renamed").first()).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await login(page);
+    await page
+      .getByRole("button", { name: "Admin tokens", exact: true })
+      .click();
+    await page
+      .locator(".table-row")
+      .filter({ hasText: "operator-renamed" })
+      .getByTitle("Revoke token")
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm" })
+      .click();
+    await expect(
+      page.locator(".table-row").filter({ hasText: "operator-renamed" }),
+    ).toHaveCount(0);
+    administratorCookies = await page.context().cookies();
+  });
+  test("scope-limited admin tokens cannot manage other tokens", async ({
+    page,
+  }) => {
+    const token = await garage("CreateAdminToken", {
+      name: "bucket-reader",
+      scope: ["ListBuckets", "GetBucketInfo"],
+    });
+    await login(page, token.secretToken);
+    await expect(
+      page.getByRole("button", { name: "Admin tokens", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Cluster", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      (await page.request.get("api/garage/ListAdminTokens")).status(),
+    ).toBe(403);
     expect(
       (
         await page.request.post("api/garage/CreateBucket", {
           headers,
-          data: { globalAlias: "e2e-forbidden" },
+          data: { globalAlias: "forbidden" },
         })
       ).status(),
     ).toBe(403);
-    expect(
-      (
-        await page.request.post("api/objects/presign", {
-          headers,
-          data: { action: "delete", bucketId: "unused", key: "x" },
-        })
-      ).status(),
-    ).toBe(403);
-    await page.getByRole("button", { name: "Sign out" }).click();
-    expect((await page.request.get("api/users")).status()).toBe(401);
+    await garage("DeleteAdminToken", {}, `?id=${encodeURIComponent(token.id)}`);
+    expect((await page.request.get("api/garage/ListBuckets")).status()).toBe(
+      401,
+    );
   });
-
-  test("manages users in an accessible modal", async ({ page }) => {
-    await page.context().addCookies(administratorCookies);
-    await page.goto("./");
-    await page.getByRole("button", { name: "Users" }).click();
-    const create = page.getByRole("button", { name: "Create user" });
-    await create.click();
-    const dialog = page.getByRole("dialog", { name: "Create user" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByLabel("Username").fill("e2e-viewer");
-    await dialog.getByRole("button", { name: "Create user" }).click();
-    await expect(dialog.getByRole("alert")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    await expect(create).toBeFocused();
-    const row = page.locator(".user-row").filter({ hasText: "e2e-viewer" });
-    const manage = row.getByRole("button", { name: "Manage" });
-    await manage.click();
-    const management = page.getByRole("dialog", { name: "Manage e2e-viewer" });
-    await expect(
-      management.getByRole("heading", { name: "Account" }),
-    ).toBeVisible();
-    await management.getByRole("button", { name: "Close dialog" }).click();
-    await expect(manage).toBeFocused();
-  });
-
-  test("does not show a delayed response from a signed-out account", async ({
+  test("S3 keys see only permitted buckets and Garage enforces read-only access", async ({
     page,
   }) => {
-    let release;
-    let started;
-    const requestStarted = new Promise((resolve) => {
-      started = resolve;
-    });
-    const gate = new Promise((resolve) => {
-      release = resolve;
-    });
-    await page.route(
-      "**/api/garage/ListBuckets",
-      async (route) => {
-        started();
-        await gate;
-        await route
-          .fulfill({
-            json: [
-              {
-                id: "old",
-                globalAliases: ["previous-session-only"],
-                created: "",
-              },
-            ],
-          })
-          .catch(() => {});
-      },
-      { times: 1 },
+    const buckets = await garage("ListBuckets");
+    const selected = buckets.find((value) =>
+      value.globalAliases.includes(bucket),
     );
-    try {
-      await login(page, "e2e-admin");
-      await requestStarted;
-      await page.getByRole("button", { name: "Sign out" }).click();
-      await page.getByLabel("Username").fill("e2e-viewer");
-      await page.getByLabel("Password", { exact: true }).fill(password);
-      await page.getByRole("button", { name: "Sign in" }).click();
-      await expect(page.getByText("e2e-viewer")).toBeVisible();
-      release();
-      await page.getByRole("button", { name: "Buckets" }).click();
-      await expect(page.getByText(bucket).first()).toBeVisible();
-      await expect(page.getByText("previous-session-only")).toHaveCount(0);
-    } finally {
-      release();
-    }
+    const key = await garage("CreateKey", { name: "s3-reader" });
+    await garage("AllowBucketKey", {
+      bucketId: selected.id,
+      accessKeyId: key.accessKeyId,
+      permissions: { read: true },
+    });
+    await garage(
+      "UpdateBucket",
+      {
+        corsRules: [
+          {
+            AllowedOrigin: [origin],
+            AllowedMethod: ["GET", "PUT", "POST", "DELETE"],
+            AllowedHeader: ["*"],
+            ExposeHeader: ["ETag"],
+          },
+        ],
+      },
+      `?id=${encodeURIComponent(selected.id)}`,
+    );
+    await page.goto("./");
+    await page.getByRole("tab", { name: "S3 credentials" }).click();
+    await page.getByLabel("Access key ID").fill(key.accessKeyId);
+    await page.getByLabel("Secret access key").fill(key.secretAccessKey);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Admin tokens", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Cluster", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Access keys", exact: true }),
+    ).toHaveCount(0);
+    const listing = await page.request.get("api/garage/ListBuckets");
+    expect(listing.ok()).toBeTruthy();
+    expect((await listing.json()).map((value) => value.id)).toEqual([bucket]);
+    expect(
+      (
+        await page.request.get("api/garage/GetBucketInfo?id=unrelated")
+      ).status(),
+    ).toBe(403);
+    expect((await page.request.get("api/garage/ListKeys")).status()).toBe(403);
+    const signed = await page.request.post("api/uploads/presign", {
+      headers,
+      data: { bucketId: bucket, key: "forbidden.txt", size: 1 },
+    });
+    expect(signed.ok()).toBeTruthy();
+    const { url } = await signed.json();
+    expect((await page.request.put(url, { data: "x" })).status()).toBe(403);
+    const read = await page.request.post("api/objects/presign", {
+      headers,
+      data: { bucketId: bucket, action: "list" },
+    });
+    expect(read.ok()).toBeTruthy();
+    expect((await page.request.get((await read.json()).url)).ok()).toBeTruthy();
+    await page.getByText(bucket, { exact: true }).first().click();
+    await expect(
+      page.getByRole("tab", { name: "Overview", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("tab", { name: "Permissions", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Nothing here")).toBeVisible();
+    const cookies = await page.context().cookies();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.context().addCookies(cookies);
+    expect((await page.request.get("api/garage/ListBuckets")).status()).toBe(
+      401,
+    );
   });
-
   test("recovers from a failed session request", async ({ page }) => {
     await page.route("**/api/session", (route) => route.abort(), { times: 1 });
     await page.goto("./");
-    await expect(page.getByRole("alert")).toContainText("Could not connect");
+    await expect(page.getByRole("alert")).toContainText("could not connect");
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Sign in to Garage" }),
+    ).toBeVisible();
   });
 
   test("allows retrying a failed upload", async ({ page }) => {
-    await login(page, "e2e-admin");
+    await page.context().addCookies(administratorCookies);
+    await page.goto("./");
     await page.getByRole("button", { name: "Buckets" }).click();
     await page.getByText(bucket).first().click();
     await page.getByRole("tab", { name: "Browse" }).click();
@@ -197,7 +251,8 @@ test.describe.serial("local authentication and storage", () => {
   test("uploads, previews, downloads and deletes an object", async ({
     page,
   }) => {
-    await login(page, "e2e-admin");
+    await page.context().addCookies(administratorCookies);
+    await page.goto("./");
     await page.getByRole("button", { name: "Buckets" }).click();
     await page.getByText(bucket).first().click();
     await page.getByRole("tab", { name: "Browse" }).click();
@@ -273,7 +328,8 @@ test.describe.serial("local authentication and storage", () => {
       } finally {
         await file.close();
       }
-      await login(page, "e2e-admin");
+      await page.context().addCookies(administratorCookies);
+      await page.goto("./");
       await page.getByRole("button", { name: "Buckets" }).click();
       await page.getByText(bucket).first().click();
       await page.getByRole("tab", { name: "Browse" }).click();
@@ -317,7 +373,8 @@ test.describe.serial("local authentication and storage", () => {
       } finally {
         await file.close();
       }
-      await login(page, "e2e-admin");
+      await page.context().addCookies(administratorCookies);
+      await page.goto("./");
       await page.getByRole("button", { name: "Buckets" }).click();
       await page.getByText(bucket).first().click();
       await page.getByRole("tab", { name: "Browse" }).click();
@@ -354,7 +411,7 @@ test.describe.serial("local authentication and storage", () => {
       await dialog.getByRole("button", { name: "Cancel uploads" }).click();
       release();
       expect((await abort).ok()).toBeTruthy();
-      await expect(dialog.getByText("Uploads cancelled")).toBeVisible();
+      await expect(dialog.getByText("uploads cancelled")).toBeVisible();
     } finally {
       release?.();
       await rm(dir, { recursive: true, force: true });

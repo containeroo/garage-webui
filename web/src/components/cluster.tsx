@@ -4,7 +4,15 @@ import { Button } from "./ui/button";
 import { DialogPanel } from "./ui/dialog";
 import { Metric } from "./storage";
 import { useCallback, useEffect, useState } from "react";
-import { errorMessage, get, post, short, type Health } from "../api";
+import {
+  allows,
+  errorMessage,
+  get,
+  post,
+  short,
+  type Health,
+  type Session,
+} from "../api";
 import { formatBytes } from "./usage";
 
 type Role = { zone: string; capacity: number | null; tags: string[] };
@@ -33,7 +41,13 @@ type Layout = {
 };
 type Preview = { error?: string; message?: string[] };
 
-export function Cluster({ role, health }: { role: string; health?: Health }) {
+export function Cluster({
+  session,
+  health,
+}: {
+  session: Session;
+  health?: Health;
+}) {
   const { confirm } = useQuestions();
   const [status, setStatus] = useState<Status>();
   const [layout, setLayout] = useState<Layout>();
@@ -173,7 +187,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
         <div className="panel-head">
           <h2>Nodes</h2>
         </div>
-        {role === "admin" && (
+        {allows(session, "ConnectClusterNodes") && (
           <form
             className="cluster-connect"
             onSubmit={(e) => {
@@ -241,7 +255,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                     </span>
                   </td>
                   <td>
-                    {role === "admin" && (
+                    {allows(session, "UpdateClusterLayout") && (
                       <span className="cluster-node-actions">
                         <button
                           className="text-button"
@@ -299,7 +313,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                 </>
               )}
             </p>
-            {role === "admin" && (
+            {allows(session, "UpdateClusterLayout") && (
               <form
                 className="layout-settings"
                 onSubmit={(e) => {
@@ -312,7 +326,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                     typeof value !== "string" &&
                     (!Number.isSafeInteger(value.atLeast) || value.atLeast < 1)
                   ) {
-                    setError("Enter a positive number of zones.");
+                    setError("enter a positive number of zones.");
                     return;
                   }
                   void action(async () => {
@@ -378,11 +392,15 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                   <li>Layout parameters changed</li>
                 )}
               </ul>
-              {role === "admin" && (
+              {(allows(session, "PreviewClusterLayoutChanges") ||
+                allows(session, "ApplyClusterLayout") ||
+                allows(session, "RevertClusterLayout")) && (
                 <div className="cluster-actions">
                   <Button
                     variant="outline"
-                    disabled={busy}
+                    disabled={
+                      busy || !allows(session, "PreviewClusterLayoutChanges")
+                    }
                     onClick={() =>
                       action(async () => {
                         const p = await post<Preview>(
@@ -395,7 +413,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                     Preview
                   </Button>
                   <Button
-                    disabled={busy}
+                    disabled={busy || !allows(session, "ApplyClusterLayout")}
                     onClick={async () => {
                       if (
                         await confirm(
@@ -415,7 +433,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                   </Button>
                   <Button
                     variant="outline"
-                    disabled={busy}
+                    disabled={busy || !allows(session, "RevertClusterLayout")}
                     onClick={async () => {
                       if (await confirm("Discard all staged layout changes?"))
                         void action(async () => {
@@ -487,7 +505,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                     );
                     await refresh().catch((e) =>
                       setError(
-                        `Removal was staged, but refresh failed: ${errorMessage(e)}`,
+                        `removal was staged, but refresh failed: ${errorMessage(e)}`,
                       ),
                     );
                   } catch (e) {
@@ -556,7 +574,7 @@ export function Cluster({ role, health }: { role: string; health?: Health }) {
                     );
                     await refresh().catch((e) =>
                       setError(
-                        `Assignment was staged, but refresh failed: ${errorMessage(e)}`,
+                        `assignment was staged, but refresh failed: ${errorMessage(e)}`,
                       ),
                     );
                   } catch (e) {

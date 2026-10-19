@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gi8lino/garage-webui/internal/objectpath"
-	"github.com/gi8lino/garage-webui/internal/signing"
+	"github.com/containeroo/garage-webui/internal/objectpath"
+	"github.com/containeroo/garage-webui/internal/signing"
 )
 
 // CredentialProvider obtains purpose-limited bucket credentials.

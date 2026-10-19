@@ -2,161 +2,164 @@
 package credentials
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
+	"time"
 
-	"github.com/gi8lino/garage-webui/internal/garage"
-	"github.com/gi8lino/garage-webui/internal/signing"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
+	"github.com/containeroo/garage-webui/internal/signing"
 )
-
-// Store serializes and persists bucket credential identifiers.
-type Store interface {
-	WithBucketSigningKey(context.Context, string, func(context.Context, string) (string, error)) error
-	WithBucketReadKey(context.Context, string, func(context.Context, string) (string, error)) error
-	WithBucketCopyKey(context.Context, string, func(context.Context, string) (string, error)) error
-}
 
 // Provider manages Garage keys, permissions and browser CORS.
 type Provider struct {
-	admin  *garage.Client
-	store  Store
+	admin  *admin.Client
+	store  signing.BucketLocker
 	origin string
+	cache  *Cache
+	token  string
 }
 
 // New constructs a provider for Garage signing credentials.
-func New(admin *garage.Client, store Store, origin string) *Provider {
+func New(client *admin.Client, store signing.BucketLocker, origin string) *Provider {
 	return &Provider{
-		admin:  admin,
+		admin:  client,
 		store:  store,
 		origin: origin,
 	}
 }
 
-// Copy obtains the separate bucket-scoped copy-only credential.
+// NewWithCache provisions keys with a short-lived cache scoped to one admin token.
+func NewWithCache(client *admin.Client, store signing.BucketLocker, origin string, cache *Cache, token string) *Provider {
+	provider := New(client, store, origin)
+	provider.cache = cache
+	provider.token = token
+
+	return provider
+}
+
+// cached returns a verified signing key from the current token's bucket scope.
+func (m *Provider) cached(bucketID, purpose string) (signing.Credential, bool) {
+	return m.cache.Get(m.token, bucketID, purpose)
+}
+
+// remember caches a prepared key only after its Garage permissions and CORS succeed.
+func (m *Provider) remember(bucketID, purpose string, key signing.Credential) {
+	m.cache.Put(m.token, bucketID, purpose, key)
+}
+
+// Copy obtains the bucket-scoped read/write key used for server-side copying.
 func (m *Provider) Copy(ctx context.Context, bucketID string) (signing.Credential, error) {
-	var key signing.Credential
-	err := m.store.WithBucketCopyKey(ctx, bucketID, func(ctx context.Context, id string) (string, error) {
-		var err error
-		key, err = m.managedKeyForPurpose(ctx, id, bucketID, "copy")
-		if err != nil {
-			return key.AccessKeyID, err
-		}
-
-		if err := m.changePermission(ctx, "AllowBucketKey", bucketID, key.AccessKeyID, map[string]bool{"read": true, "write": true}); err != nil {
-			return key.AccessKeyID, err
-		}
-
-		if err := m.changePermission(ctx, "DenyBucketKey", bucketID, key.AccessKeyID, map[string]bool{"owner": true}); err != nil {
-			return key.AccessKeyID, err
-		}
-
-		return key.AccessKeyID, m.ensureCORS(ctx, bucketID, http.MethodPut)
-	})
-	if err != nil {
-		return signing.Credential{}, err
-	}
-
-	return key, nil
+	return m.bucketCredential(ctx, bucketID, signing.Copy)
 }
 
-// Write obtains or creates the bucket-scoped write-only credential.
-func (m *Provider) Write(ctx context.Context, bucketID, method string) (signing.Credential, error) {
-	var key signing.Credential
-	err := m.store.WithBucketSigningKey(ctx, bucketID, func(ctx context.Context, keyID string) (string, error) {
-		var err error
-		key, err = m.managedKey(ctx, keyID, bucketID, false)
-		if err != nil {
-			return key.AccessKeyID, err
-		}
-
-		if err := m.enforceWriteOnly(ctx, bucketID, key.AccessKeyID); err != nil {
-			return key.AccessKeyID, err
-		}
-
-		return key.AccessKeyID, m.ensureCORS(ctx, bucketID, method)
-	})
-	if err != nil {
-		return signing.Credential{}, err
-	}
-
-	return key, nil
+// Write obtains the bucket-scoped write-only key used for uploads and deletions.
+func (m *Provider) Write(ctx context.Context, bucketID, _ string) (signing.Credential, error) {
+	return m.bucketCredential(ctx, bucketID, signing.Write)
 }
 
-// Read obtains or creates the bucket-scoped read-only credential.
+// Read obtains the bucket-scoped read-only key used for listing and downloads.
 func (m *Provider) Read(ctx context.Context, bucketID string) (signing.Credential, error) {
-	var key signing.Credential
-	err := m.store.WithBucketReadKey(ctx, bucketID, func(ctx context.Context, keyID string) (string, error) {
-		var err error
-		key, err = m.managedKey(ctx, keyID, bucketID, true)
-		if err != nil {
-			return key.AccessKeyID, err
-		}
+	return m.bucketCredential(ctx, bucketID, signing.Read)
+}
 
-		if err := m.enforceReadOnly(ctx, bucketID, key.AccessKeyID); err != nil {
-			return key.AccessKeyID, err
-		}
+// bucketCredential coordinates Garage provisioning while holding the bucket lock.
+// The generated key ID is saved immediately, so failed permission/CORS updates
+// can be retried without losing track of a newly created Garage key.
+func (m *Provider) bucketCredential(ctx context.Context, bucketID string, purpose signing.Purpose) (key signing.Credential, err error) {
+	if cached, ok := m.cached(bucketID, string(purpose)); ok {
+		return cached, nil
+	}
 
-		return key.AccessKeyID, m.ensureCORS(ctx, bucketID, http.MethodGet)
-	})
+	lock, err := m.store.LockBucket(ctx, bucketID)
 	if err != nil {
+		return signing.Credential{}, err
+	}
+
+	defer func() {
+		err = errors.Join(err, lock.Close())
+		if err == nil {
+			m.remember(bucketID, string(purpose), key)
+		} else {
+			key = signing.Credential{}
+		}
+	}()
+
+	previousID, err := lock.KeyID(ctx, purpose)
+	if err != nil {
+		return signing.Credential{}, err
+	}
+
+	provisionCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	key, err = m.managedKeyForPurpose(provisionCtx, previousID, bucketID, string(purpose))
+	if key.AccessKeyID != "" && key.AccessKeyID != previousID {
+		if saveErr := lock.SaveKeyID(ctx, purpose, key.AccessKeyID); saveErr != nil {
+			return signing.Credential{}, errors.Join(err, saveErr)
+		}
+	}
+
+	if err != nil {
+		return signing.Credential{}, err
+	}
+
+	if err := m.enforcePurpose(provisionCtx, bucketID, key.AccessKeyID, purpose); err != nil {
+		return signing.Credential{}, err
+	}
+
+	if err := m.ensureCORS(provisionCtx, bucketID); err != nil {
 		return signing.Credential{}, err
 	}
 
 	return key, nil
 }
 
-// signing.Credential retrieves an existing bucket-scoped key or creates a replacement.
-func (m *Provider) managedKey(ctx context.Context, keyID, bucketID string, readOnly bool) (signing.Credential, error) {
-	purpose := "upload"
-	if readOnly {
-		purpose = "read"
+// enforcePurpose grants the selected key only its intended bucket privileges.
+func (m *Provider) enforcePurpose(ctx context.Context, bucketID, keyID string, purpose signing.Purpose) error {
+	switch purpose {
+	case signing.Write:
+		return m.enforceWriteOnly(ctx, bucketID, keyID)
+	case signing.Read:
+		return m.enforceReadOnly(ctx, bucketID, keyID)
+	case signing.Copy:
+		if err := m.admin.AllowBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Read: true, Write: true}); err != nil {
+			return err
+		}
+		return m.admin.DenyBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Owner: true})
+	default:
+		return fmt.Errorf("unknown bucket signing key purpose %q", purpose)
 	}
-
-	return m.managedKeyForPurpose(ctx, keyID, bucketID, purpose)
 }
 
 // CredentialForPurpose creates or loads a purpose-limited S3 credential.
 func (m *Provider) managedKeyForPurpose(ctx context.Context, keyID, bucketID, purpose string) (signing.Credential, error) {
 	if keyID != "" {
-		key, missing, err := m.keyInfo(ctx, keyID)
-		if err != nil {
+		key, err := m.admin.GetKey(ctx, keyID, true)
+		if err != nil && !errors.Is(err, admin.ErrNotFound) {
 			return signing.Credential{}, err
 		}
 
-		if !missing && usableKey(key) {
+		if err == nil && usableKey(key) {
 			return key, nil
 		}
 	}
 
-	var key signing.Credential
-	if err := m.adminJSON(ctx, http.MethodPost, "CreateKey", nil, map[string]string{
-		"name": "garage-webui-" + purpose + "-" + bucketID,
-	}, &key); err != nil {
+	key, err := m.admin.CreateKey(ctx, "garage-webui-"+purpose+"-"+bucketID)
+	if err != nil {
 		return signing.Credential{}, fmt.Errorf("create Garage S3 key: %w", err)
 	}
 
-	if key.AccessKeyID == "" {
-		return signing.Credential{}, errors.New("garage returned an empty S3 key ID")
+	if key.SecretAccessKey != "" {
+		return key, nil
+	}
+	// Keep the generated ID even when retrieving the secret fails; it must be
+	// persisted before further provisioning attempts to avoid orphaning keys.
+	fresh, err := m.admin.GetKey(ctx, key.AccessKeyID, true)
+	if err != nil || fresh.SecretAccessKey == "" {
+		return signing.Credential{AccessKeyID: key.AccessKeyID}, errors.New("garage did not return a usable S3 secret")
 	}
 
-	if key.SecretAccessKey == "" {
-		createdID := key.AccessKeyID
-		var missing bool
-		var err error
-		key, missing, err = m.keyInfo(ctx, createdID)
-		if err != nil || missing || key.SecretAccessKey == "" {
-			return signing.Credential{AccessKeyID: createdID}, errors.New("garage did not return a usable S3 secret")
-		}
-	}
-
-	return key, nil
+	return fresh, nil
 }
 
 // usableKey checks that Garage returned a non-expired signing credential.
@@ -164,43 +167,13 @@ func usableKey(key signing.Credential) bool {
 	return key.AccessKeyID != "" && key.SecretAccessKey != "" && !key.Expired
 }
 
-// keyInfo retrieves only the persisted bucket key's secret from the Admin API.
-func (m *Provider) keyInfo(ctx context.Context, id string) (credential signing.Credential, missing bool, err error) {
-	var key signing.Credential
-	status, data, err := m.admin.Request(ctx, http.MethodGet, "GetKeyInfo", url.Values{
-		"id":            {id},
-		"showSecretKey": {"true"},
-	}, nil)
-	if err != nil {
-		return key, false, err
-	}
-
-	if status == http.StatusNotFound {
-		return key, true, nil
-	}
-
-	if status != http.StatusOK {
-		return key, false, fmt.Errorf("GetKeyInfo returned HTTP %d", status)
-	}
-
-	if err := json.Unmarshal(data, &key); err != nil {
-		return key, false, err
-	}
-
-	if key.AccessKeyID != id {
-		return key, false, errors.New("garage returned a different key ID")
-	}
-
-	return key, false, nil
-}
-
 // enforceWriteOnly grants write permission and revokes read/owner permissions.
 func (m *Provider) enforceWriteOnly(ctx context.Context, bucketID, keyID string) error {
-	if err := m.changePermission(ctx, "AllowBucketKey", bucketID, keyID, map[string]bool{"write": true}); err != nil {
+	if err := m.admin.AllowBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Write: true}); err != nil {
 		return fmt.Errorf("grant object write permission: %w", err)
 	}
 
-	if err := m.changePermission(ctx, "DenyBucketKey", bucketID, keyID, map[string]bool{"read": true, "owner": true}); err != nil {
+	if err := m.admin.DenyBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Read: true, Owner: true}); err != nil {
 		return fmt.Errorf("remove non-write permissions: %w", err)
 	}
 
@@ -209,47 +182,12 @@ func (m *Provider) enforceWriteOnly(ctx context.Context, bucketID, keyID string)
 
 // enforceReadOnly grants read permission and revokes write/owner permissions.
 func (m *Provider) enforceReadOnly(ctx context.Context, bucketID, keyID string) error {
-	if err := m.changePermission(ctx, "AllowBucketKey", bucketID, keyID, map[string]bool{"read": true}); err != nil {
+	if err := m.admin.AllowBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Read: true}); err != nil {
 		return fmt.Errorf("grant object read permission: %w", err)
 	}
 
-	if err := m.changePermission(ctx, "DenyBucketKey", bucketID, keyID, map[string]bool{"write": true, "owner": true}); err != nil {
+	if err := m.admin.DenyBucketKey(ctx, bucketID, keyID, admin.BucketPermissions{Write: true, Owner: true}); err != nil {
 		return fmt.Errorf("remove non-read permissions: %w", err)
-	}
-
-	return nil
-}
-
-// changePermission changes only this bucket's specified key privileges.
-func (m *Provider) changePermission(ctx context.Context, operation, bucketID, keyID string, permissions map[string]bool) error {
-	return m.adminJSON(ctx, http.MethodPost, operation, nil, map[string]any{
-		"bucketId": bucketID, "accessKeyId": keyID, "permissions": permissions,
-	}, nil)
-}
-
-// adminJSON calls Garage's private Admin API without disclosing its token.
-func (m *Provider) adminJSON(ctx context.Context, method, operation string, query url.Values, input, output any) error {
-	var body io.Reader
-	if input != nil {
-		encoded, err := json.Marshal(input)
-		if err != nil {
-			return err
-		}
-
-		body = bytes.NewReader(encoded)
-	}
-
-	status, data, err := m.admin.Request(ctx, method, operation, query, body)
-	if err != nil {
-		return err
-	}
-
-	if status < 200 || status >= 300 {
-		return fmt.Errorf("%s returned HTTP %d: %s", operation, status, strings.TrimSpace(string(data)))
-	}
-
-	if output != nil {
-		return json.Unmarshal(data, output)
 	}
 
 	return nil

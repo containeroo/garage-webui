@@ -159,10 +159,6 @@ func TestObjectSigningValidation(t *testing.T) {
 		}
 	}
 
-	if objectMutation("download") || !objectMutation("multipart-copy-abort") {
-		t.Fatal("incorrect object permission classification")
-	}
-
 	if validMultipartID(strings.Repeat("a", 2049)) {
 		t.Fatal("unbounded upload ID")
 	}

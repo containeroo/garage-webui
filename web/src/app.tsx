@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import "./style.css";
 import "./theme.css";
-import { UserManagement } from "./users";
+import { AdminTokens } from "./components/admin-tokens";
 import { ProfileSettings } from "./profile";
 import { useTheme } from "./components/theme-picker";
 import { QuestionProvider, useQuestions } from "./components/ui/questions";
@@ -30,6 +30,7 @@ import { Usage } from "./components/usage";
 import { KeySettings } from "./components/key-settings";
 
 import {
+  allows,
   request,
   get,
   post,
@@ -82,10 +83,7 @@ function AppContent() {
         </div>
       </div>
     );
-  const recoveryPage =
-    window.location.pathname === new URL("login", document.baseURI).pathname;
-  if (!session.user || (session.localLogin && recoveryPage))
-    return <Login session={session} onLogin={setSession} />;
+  if (!session.user) return <Login session={session} onLogin={setSession} />;
   return (
     <Workspace
       key={session.user}
@@ -105,7 +103,9 @@ function Workspace({
 }) {
   const { confirm } = useQuestions();
   const theme = useTheme();
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(
+    session.mode === "admin" ? "overview" : "buckets",
+  );
   const [usageTotals, setUsageTotals] = useState<{
     bytes: number;
     objects: number;
@@ -133,9 +133,15 @@ function Workspace({
     setBusy(true);
     setError("");
     const results = await Promise.allSettled([
-      get<Health>("GetClusterHealth"),
-      get<Bucket[]>("ListBuckets"),
-      get<Key[]>("ListKeys"),
+      allows(session, "GetClusterHealth")
+        ? get<Health>("GetClusterHealth")
+        : Promise.resolve(undefined),
+      session.mode === "s3" || allows(session, "ListBuckets")
+        ? get<Bucket[]>("ListBuckets")
+        : Promise.resolve([]),
+      allows(session, "ListKeys")
+        ? get<Key[]>("ListKeys")
+        : Promise.resolve([]),
     ]);
     if (results[0].status === "fulfilled") setHealth(results[0].value);
     if (results[1].status === "fulfilled") setBuckets(results[1].value);
@@ -146,10 +152,10 @@ function Workspace({
     const failure = results.find((result) => result.status === "rejected");
     if (failure?.status === "rejected")
       setError(
-        `Could not load all Garage data: ${errorMessage(failure.reason)}`,
+        `could not load all Garage data: ${errorMessage(failure.reason)}`,
       );
     setBusy(false);
-  }, []);
+  }, [session]);
   useEffect(() => {
     if (session?.user) void load();
   }, [session, load]);
@@ -170,7 +176,7 @@ function Workspace({
     tab: "overview" | "permissions" | "browse" = "overview",
   ) {
     setUploadPrefix("");
-    setBucketTab(tab);
+    setBucketTab(session.mode === "s3" ? "browse" : tab);
     try {
       setDetails(
         await get<Details>(
@@ -227,8 +233,8 @@ function Workspace({
                     ? "Buckets"
                     : page === "keys"
                       ? "Access keys"
-                      : page === "users"
-                        ? "Users"
+                      : page === "tokens"
+                        ? "Admin tokens"
                         : "My profile"}
             </strong>
           </div>
@@ -255,13 +261,16 @@ function Workspace({
                         ? "Buckets"
                         : page === "keys"
                           ? "Access keys"
-                          : page === "users"
-                            ? "Users"
+                          : page === "tokens"
+                            ? "Admin tokens"
                             : "My profile"}
                 </h1>
               </div>
               {(page === "buckets" || page === "keys") &&
-                session.role !== "viewer" && (
+                allows(
+                  session,
+                  page === "keys" ? "CreateKey" : "CreateBucket",
+                ) && (
                   <Button
                     onClick={() =>
                       setModal(page === "buckets" ? "bucket" : "key")
@@ -285,7 +294,7 @@ function Workspace({
           {!details && (
             <>
               {page === "cluster" && (
-                <Cluster role={session.role} health={health} />
+                <Cluster session={session} health={health} />
               )}
               {page === "overview" && (
                 <>
@@ -380,6 +389,7 @@ function Workspace({
                     </div>
                   </div>
                   <BucketRows
+                    browseOnly={session.mode === "s3"}
                     buckets={buckets}
                     onSelect={showBucket}
                     loaded={bucketsLoaded}
@@ -437,17 +447,19 @@ function Workspace({
                           >
                             {key.expired ? "Expired" : "Active"}
                           </span>
-                          {session.role !== "viewer" && (
+                          {session.mode === "admin" && (
                             <div className="key-actions">
                               <button
                                 type="button"
                                 className="secondary"
+                                disabled={!allows(session, "UpdateKey")}
                                 onClick={() => setEditingKey(key.id)}
                               >
                                 Edit
                               </button>
                               <button
                                 className="icon-button danger"
+                                disabled={!allows(session, "DeleteKey")}
                                 title="Delete key"
                                 onClick={() => remove("Key", key.id, key.name)}
                               >
@@ -469,21 +481,9 @@ function Workspace({
                   )}
                 </section>
               )}
-              {page === "users" && (
-                <UserManagement
-                  request={request}
-                  currentUser={session.user}
-                  mode={session.mode}
-                  localLogin={session.localLogin}
-                  oidcIssuer={session.oidcIssuer || ""}
-                />
-              )}
+              {page === "tokens" && <AdminTokens session={session} />}
               {page === "profile" && (
-                <ProfileSettings
-                  request={request}
-                  localLogin={session.localLogin}
-                  theme={theme}
-                />
+                <ProfileSettings session={session} theme={theme} />
               )}
             </>
           )}
@@ -513,23 +513,25 @@ function Workspace({
                     ["permissions", "Permissions"],
                     ["browse", "Browse"],
                   ] as const
-                ).map(([id, label]) => (
-                  <button
-                    role="tab"
-                    aria-selected={bucketTab === id}
-                    className={bucketTab === id ? "active" : ""}
-                    key={id}
-                    onClick={() => setBucketTab(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
+                )
+                  .filter(([id]) => session.mode === "admin" || id === "browse")
+                  .map(([id, label]) => (
+                    <button
+                      role="tab"
+                      aria-selected={bucketTab === id}
+                      className={bucketTab === id ? "active" : ""}
+                      key={id}
+                      onClick={() => setBucketTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
               </div>
               {bucketTab === "browse" && (
                 <BucketObjects
                   key={details.id}
                   bucketId={details.id}
-                  canDelete={session.role !== "viewer"}
+                  canDelete={true}
                   enabled={session.uploadsEnabled}
                   refreshVersion={objectsVersion}
                   onFolderChange={setUploadPrefix}
@@ -540,7 +542,7 @@ function Workspace({
                 <BucketSettings
                   key={details.id}
                   bucket={details}
-                  canEdit={session.role !== "viewer"}
+                  canEdit={allows(session, "UpdateBucket")}
                   onChanged={(bucket) => {
                     setDetails(bucket);
                     void load();
@@ -553,7 +555,7 @@ function Workspace({
                     <div>
                       <h3>Access permissions</h3>
                     </div>
-                    {session.role !== "viewer" && (
+                    {session.mode === "admin" && (
                       <button
                         className="secondary"
                         onClick={() => setModal("grant")}
@@ -567,11 +569,11 @@ function Workspace({
                   ) : (
                     details.keys.map((grant) => (
                       <div className="grant" key={grant.accessKeyId}>
-                        <div>
-                          <strong>
-                            {keys.find((k) => k.id === grant.accessKeyId)
-                              ?.name || short(grant.accessKeyId)}
+                        <div className="grant-identity">
+                          <strong title={keys.find((key) => key.id === grant.accessKeyId)?.name || grant.accessKeyId}>
+                            {keys.find((key) => key.id === grant.accessKeyId)?.name || short(grant.accessKeyId)}
                           </strong>
+                          <small title={grant.accessKeyId}>{grant.accessKeyId}</small>
                         </div>
                         <div className="grant-permissions">
                           {(["read", "write", "owner"] as const).map(
@@ -579,8 +581,16 @@ function Workspace({
                               <label key={permission}>
                                 <input
                                   type="checkbox"
+                                  aria-label={`${permission} permission for ${grant.accessKeyId}`}
                                   checked={grant.permissions[permission]}
-                                  disabled={session.role === "viewer" || busy}
+                                  disabled={
+                                    !allows(
+                                      session,
+                                      grant.permissions[permission]
+                                        ? "DenyBucketKey"
+                                        : "AllowBucketKey",
+                                    ) || busy
+                                  }
                                   onChange={async (event) => {
                                     const enabled = event.target.checked;
                                     await run(async () => {
@@ -612,7 +622,7 @@ function Workspace({
                             ),
                           )}
                         </div>
-                        {session.role !== "viewer" && (
+                        {session.mode === "admin" && (
                           <button
                             className="icon-button danger"
                             title="Remove access"
@@ -650,7 +660,7 @@ function Workspace({
                   )}
                 </div>
               )}
-              {bucketTab === "overview" && session.role !== "viewer" && (
+              {bucketTab === "overview" && allows(session, "DeleteBucket") && (
                 <button
                   className="delete-bucket"
                   onClick={() =>

@@ -27,5 +27,6 @@ func SameOrigin(r *http.Request, publicURL string) bool {
 	}
 
 	base, err := url.Parse(publicURL)
+
 	return err == nil && origin.Scheme == base.Scheme && origin.Host == base.Host
 }

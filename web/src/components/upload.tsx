@@ -30,7 +30,7 @@ function normalizedPrefix(value: string): string {
     prefix.split("/").some((part) => !part || part === "." || part === "..")
   ) {
     throw new Error(
-      "Enter a folder without leading slashes or traversal components",
+      "enter a folder without leading slashes or traversal components",
     );
   }
   return prefix + "/";
@@ -151,7 +151,7 @@ export function UploadDialog({
       }
       setQueue([...pending]);
     }
-    if (current.signal.aborted && !anyUploaded) setError("Uploads cancelled");
+    if (current.signal.aborted && !anyUploaded) setError("uploads cancelled");
     controller.current = null;
     setBusy(false);
   }

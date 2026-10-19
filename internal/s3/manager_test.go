@@ -12,13 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gi8lino/garage-webui/internal/garage"
-	"github.com/gi8lino/garage-webui/internal/garage/credentials"
-	"github.com/gi8lino/garage-webui/internal/signing"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
+	"github.com/containeroo/garage-webui/internal/garage/credentials"
+	"github.com/containeroo/garage-webui/internal/signing"
 )
 
-// memoryKeyStore provides the same bucket-scoped provisioning lock and ID tracking
-// as PostgreSQL's WithBucketSigningKey transaction.
+// memoryKeyStore simulates a bucket lock held across provisioning operations.
 type memoryKeyStore struct {
 	mu      sync.Mutex
 	ids     map[string]string
@@ -26,52 +25,76 @@ type memoryKeyStore struct {
 	copyIDs map[string]string
 }
 
-// WithBucketSigningKey simulates serialized persistent bucket-key provisioning.
-func (s *memoryKeyStore) WithBucketSigningKey(ctx context.Context, bucketID string, prepare func(context.Context, string) (string, error)) error {
+type memoryBucketLock struct {
+	store  *memoryKeyStore
+	bucket string
+	once   sync.Once
+}
+
+// LockBucket keeps the in-memory store locked until the caller closes the handle.
+func (s *memoryKeyStore) LockBucket(ctx context.Context, bucket string) (signing.BucketLock, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.ids == nil {
-		s.ids = map[string]string{}
+		s.ids = make(map[string]string)
 	}
-
-	id, err := prepare(ctx, s.ids[bucketID])
-	if id != "" {
-		s.ids[bucketID] = id
-	}
-
-	return err
-}
-
-// WithBucketReadKey simulates independent per-bucket read-only credentials.
-func (s *memoryKeyStore) WithBucketReadKey(ctx context.Context, bucketID string, prepare func(context.Context, string) (string, error)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.readIDs == nil {
-		s.readIDs = map[string]string{}
+		s.readIDs = make(map[string]string)
 	}
-
-	id, err := prepare(ctx, s.readIDs[bucketID])
-	if id != "" {
-		s.readIDs[bucketID] = id
+	if s.copyIDs == nil {
+		s.copyIDs = make(map[string]string)
 	}
-
-	return err
+	return &memoryBucketLock{store: s, bucket: bucket}, nil
 }
 
-// WithBucketCopyKey tracks the dedicated read/write key for server-side copies.
-func (s *memoryKeyStore) WithBucketCopyKey(ctx context.Context, bucketID string, prepare func(context.Context, string) (string, error)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.copyIDs == nil {
-		s.copyIDs = map[string]string{}
+// KeyID returns a key from its independent purpose map.
+func (l *memoryBucketLock) KeyID(_ context.Context, purpose signing.Purpose) (string, error) {
+	switch purpose {
+	case signing.Write:
+		return l.store.ids[l.bucket], nil
+	case signing.Read:
+		return l.store.readIDs[l.bucket], nil
+	case signing.Copy:
+		return l.store.copyIDs[l.bucket], nil
+	default:
+		return "", fmt.Errorf("unknown purpose %q", purpose)
 	}
+}
 
-	id, err := prepare(ctx, s.copyIDs[bucketID])
-	if id != "" {
-		s.copyIDs[bucketID] = id
+// SaveKeyID stores the key ID before Garage permissions are configured.
+func (l *memoryBucketLock) SaveKeyID(_ context.Context, purpose signing.Purpose, id string) error {
+	switch purpose {
+	case signing.Write:
+		l.store.ids[l.bucket] = id
+	case signing.Read:
+		l.store.readIDs[l.bucket] = id
+	case signing.Copy:
+		l.store.copyIDs[l.bucket] = id
+	default:
+		return fmt.Errorf("unknown purpose %q", purpose)
 	}
+	return nil
+}
 
-	return err
+// KeyIDs lists the bucket's three managed credentials.
+func (l *memoryBucketLock) KeyIDs(context.Context) ([]string, error) {
+	return []string{l.store.ids[l.bucket], l.store.readIDs[l.bucket], l.store.copyIDs[l.bucket]}, nil
+}
+
+// DeleteKeyReferences forgets managed keys after Garage cleanup.
+func (l *memoryBucketLock) DeleteKeyReferences(context.Context) error {
+	delete(l.store.ids, l.bucket)
+	delete(l.store.readIDs, l.bucket)
+	delete(l.store.copyIDs, l.bucket)
+	return nil
+}
+
+// Close releases the simulated lock exactly once.
+func (l *memoryBucketLock) Close() error {
+	l.once.Do(l.store.mu.Unlock)
+	return nil
 }
 
 // fakeGarage contains only the Admin API operations needed for direct uploads.
@@ -222,9 +245,9 @@ func validDeniedPermission(p map[string]bool, keyName string) bool {
 // managerForTest constructs an upload manager against a simulated Garage Admin API.
 func managerForTest(t *testing.T, state *fakeGarage, store *memoryKeyStore) *Manager {
 	t.Helper()
-	admin := httptest.NewServer(state)
-	t.Cleanup(admin.Close)
-	client, err := garage.New(admin.URL, "admin-secret")
+	adminServer := httptest.NewServer(state)
+	t.Cleanup(adminServer.Close)
+	client, err := admin.New(adminServer.URL, "admin-secret")
 	if err != nil {
 		t.Fatal(err)
 	}

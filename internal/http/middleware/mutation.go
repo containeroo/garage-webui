@@ -9,8 +9,10 @@ func (s *Policies) Mutation(next http.Handler) http.Handler {
 			if s.logger != nil {
 				s.logger.Debug("mutation rejected", "event", "mutation_rejected", "method", r.Method)
 			}
+
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }

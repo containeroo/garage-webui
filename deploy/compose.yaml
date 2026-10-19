@@ -47,8 +47,7 @@ services:
     environment:
       GARAGE_WEBUI__DATABASE_URL: postgres://garage_webui:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/garage_webui?sslmode=disable
       GARAGE_WEBUI__GARAGE_URL: http://garage:3903
-      GARAGE_WEBUI__GARAGE_TOKEN: ${GARAGE_ADMIN_TOKEN:?Set GARAGE_ADMIN_TOKEN in deploy/.env}
-      GARAGE_WEBUI__AUTH_MODE: local
+      GARAGE_WEBUI__SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in deploy/.env}
       GARAGE_WEBUI__PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       GARAGE_WEBUI__S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:3900}
       GARAGE_WEBUI__S3_REGION: garage

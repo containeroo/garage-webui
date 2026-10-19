@@ -14,6 +14,7 @@ func APIHeaders() httpkitmiddleware.Middleware {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				w.Header().Set("Cache-Control", "no-store")
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

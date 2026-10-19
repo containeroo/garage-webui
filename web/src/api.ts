@@ -1,12 +1,12 @@
 export type Session = {
-  mode: string;
-  oidcIssuer?: string;
+  mode: "admin" | "s3" | "";
   user: string;
-  role: string;
-  setupRequired: boolean;
-  localLogin: boolean;
+  scope: string[];
   uploadsEnabled: boolean;
 };
+export const allows = (session: Session, operation: string) =>
+  session.mode === "admin" &&
+  (session.scope?.includes("*") || session.scope?.includes(operation));
 export type Bucket = { id: string; globalAliases: string[]; created: string };
 export type Key = { id: string; name: string; expired: boolean };
 export type Health = {
@@ -42,16 +42,27 @@ export type Details = {
   bytes?: number;
 };
 export type Page =
-  "overview" | "cluster" | "buckets" | "keys" | "users" | "profile";
+  "overview" | "cluster" | "buckets" | "keys" | "tokens" | "profile";
 
 // errorMessage turns caught exceptions into text suitable for display.
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.replace(
+    /^(\s*)([A-Z]{2,})(?=\W|$)/,
+    (_, whitespace: string, acronym: string) =>
+      whitespace + acronym.toLowerCase(),
+  );
+
+  return normalized.replace(
+    /^(\s*)(\p{Lu})/u,
+    (_, whitespace: string, first: string) =>
+      whitespace + first.toLowerCase(),
+  );
 }
 
 // responseProblem accepts our API problems, Garage errors, and plain-text errors.
 export async function responseProblem(response: Response): Promise<Error> {
-  const fallback = `Request failed (HTTP ${response.status}).`;
+  const fallback = `request failed (HTTP ${response.status}).`;
   const text = (await response.text()).trim();
   if (!text) return new Error(fallback);
   try {
@@ -102,7 +113,7 @@ export async function request<T>(
   } catch (cause) {
     if (options?.signal?.aborted) throw cause;
     throw new Error(
-      "Could not connect to the server. Check your connection and try again.",
+      "could not connect to the server. Check your connection and try again.",
       { cause },
     );
   }

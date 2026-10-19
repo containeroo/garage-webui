@@ -5,17 +5,28 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/signing"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestSigningKeyCoordination checks serialization and recovery across connections.
+// TestSigningKeyColumns rejects unsupported purposes before SQL is constructed.
+func TestSigningKeyColumns(t *testing.T) {
+	for _, purpose := range []signing.Purpose{signing.Write, signing.Read, signing.Copy} {
+		column, err := signingKeyColumn(purpose)
+		require.NoError(t, err)
+		assert.NotEmpty(t, column)
+	}
+	_, err := signingKeyColumn("unknown")
+	require.Error(t, err)
+}
+
+// TestSigningKeyCoordination verifies explicit bucket locks, cancellation and recovery.
 func TestSigningKeyCoordination(t *testing.T) {
 	dsn := os.Getenv("GARAGE_WEBUI_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -45,17 +56,13 @@ func TestSigningKeyCoordination(t *testing.T) {
 	)`)
 	require.NoError(t, err)
 	store := New(pool)
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	first := make(chan error, 1)
-	go func() {
-		first <- store.WithBucketSigningKey(ctx, "bucket", func(_ context.Context, id string) (string, error) {
-			close(entered)
-			<-release
-			return "key", nil
-		})
-	}()
-	<-entered
+
+	first, err := store.LockBucket(ctx, "bucket")
+	require.NoError(t, err)
+	other, err := store.LockBucket(ctx, "other-bucket")
+	require.NoError(t, err)
+	require.NoError(t, other.Close())
+
 	var transactions int
 	err = admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
 		WHERE application_name = $1 AND state = 'idle in transaction'`, schema).Scan(&transactions)
@@ -63,58 +70,55 @@ func TestSigningKeyCoordination(t *testing.T) {
 	assert.Zero(t, transactions)
 
 	waitCtx, cancelWait := context.WithTimeout(ctx, 100*time.Millisecond)
-	err = store.WithBucketCopyKey(waitCtx, "bucket", func(_ context.Context, _ string) (string, error) {
-		return "unexpected", nil
-	})
+	_, err = store.LockBucket(waitCtx, "bucket")
 	cancelWait()
 	require.Error(t, err)
 
-	var mu sync.Mutex
-	var seen string
-	second := make(chan error, 1)
-	go func() {
-		second <- store.WithBucketSigningKey(ctx, "bucket", func(_ context.Context, id string) (string, error) {
-			mu.Lock()
-			seen = id
-			mu.Unlock()
-			return id, nil
-		})
-	}()
-	close(release)
-	require.NoError(t, <-first)
-	require.NoError(t, <-second)
-	mu.Lock()
-	assert.Equal(t, "key", seen)
-	mu.Unlock()
+	require.NoError(t, first.SaveKeyID(ctx, signing.Write, "key"))
+	id, err := first.KeyID(ctx, signing.Write)
+	require.NoError(t, err)
+	assert.Equal(t, "key", id)
+	require.NoError(t, first.Close())
+	require.NoError(t, first.Close())
+
+	second, err := store.LockBucket(ctx, "bucket")
+	require.NoError(t, err)
+	id, err = second.KeyID(ctx, signing.Write)
+	require.NoError(t, err)
+	assert.Equal(t, "key", id)
 
 	canceled, cancel := context.WithCancel(ctx)
-	want := errors.New("provisioning interrupted")
-	err = store.WithBucketReadKey(canceled, "bucket", func(_ context.Context, _ string) (string, error) {
-		cancel()
-		return "read-key", want
-	})
-	require.ErrorIs(t, err, want)
-	var id string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT read_access_key_id FROM webui_upload_keys WHERE bucket_id = $1`, "bucket").Scan(&id))
-	assert.Equal(t, "read-key", id)
-	require.NoError(t, store.WithBucketReadKey(ctx, "bucket", func(_ context.Context, id string) (string, error) {
-		assert.Equal(t, "read-key", id)
-		return id, nil
-	}))
+	cancel()
+	// A canceled HTTP request must not lose a key already created in Garage.
+	require.NoError(t, second.SaveKeyID(canceled, signing.Read, "read-key"))
+	require.NoError(t, second.SaveKeyID(ctx, signing.Copy, "read-key"))
+	_, err = second.KeyID(ctx, "unknown")
+	require.Error(t, err)
+	ids, err := second.KeyIDs(ctx)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"key", "read-key"}, ids)
+	require.NoError(t, second.DeleteKeyReferences(ctx))
+	ids, err = second.KeyIDs(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+	require.NoError(t, second.Close())
 
-	// The new session lock also coordinates with replicas using the old transaction lock.
+	// The session lock coordinates with the old transaction advisory lock.
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(748403197, hashtext($1))`, "legacy-bucket")
+	_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, bucketAdvisoryLockNamespace, "legacy-bucket")
 	require.NoError(t, err)
 	waitCtx, cancelWait = context.WithTimeout(ctx, 100*time.Millisecond)
-	err = store.WithBucketSigningKey(waitCtx, "legacy-bucket", func(_ context.Context, _ string) (string, error) {
-		return "unexpected", nil
-	})
+	_, err = store.LockBucket(waitCtx, "legacy-bucket")
 	cancelWait()
 	require.Error(t, err)
 	require.NoError(t, tx.Rollback(ctx))
-	require.NoError(t, store.WithBucketSigningKey(ctx, "legacy-bucket", func(_ context.Context, _ string) (string, error) {
-		return "legacy-key", nil
-	}))
+	legacy, err := store.LockBucket(ctx, "legacy-bucket")
+	require.NoError(t, err)
+	require.NoError(t, legacy.SaveKeyID(ctx, signing.Write, "legacy-key"))
+	require.NoError(t, legacy.Close())
+
+	_, err = store.LockBucket(ctx, "")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, context.Canceled))
 }

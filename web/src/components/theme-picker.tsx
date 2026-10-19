@@ -37,7 +37,7 @@ export function useTheme() {
         const themes = Object.fromEntries(
           files.map((theme) => [theme.title, theme]),
         );
-        if (!themes.Light) throw new Error("Default theme unavailable");
+        if (!themes.Light) throw new Error("default theme unavailable");
         const name = themes[profile.theme] ? profile.theme : "Light";
         setCatalog(themes);
         setSelected(name);

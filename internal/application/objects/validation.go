@@ -3,7 +3,7 @@ package objects
 import (
 	"strings"
 
-	"github.com/gi8lino/garage-webui/internal/objectpath"
+	"github.com/containeroo/garage-webui/internal/objectpath"
 )
 
 // validObjectRequest validates the selected operation before provisioning keys.
@@ -111,25 +111,6 @@ func validMultipartCopyPart(input Request) bool {
 	}
 
 	return input.RangeEnd-input.RangeStart < 5<<30
-}
-
-// objectMutation identifies all operations requiring editor permissions.
-func objectMutation(action string) bool {
-	switch action {
-	case "delete",
-		"copy",
-		"multipart-start",
-		"multipart-part",
-		"multipart-complete",
-		"multipart-abort",
-		"multipart-copy-start",
-		"multipart-copy-part",
-		"multipart-copy-complete",
-		"multipart-copy-abort":
-		return true
-	}
-
-	return false
 }
 
 // validUploadRequest verifies the size, bucket ID and object key.

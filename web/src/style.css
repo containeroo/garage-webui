@@ -605,16 +605,6 @@ code {
   align-items: center;
   font-size: 13px;
 }
-.identity-details {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.identity-details small {
-  color: var(--theme-muted, #7a8791);
-}
 .delete-bucket {
   border: 1px solid #eedcda;
   background: var(--theme-surface, #fff);
@@ -823,70 +813,42 @@ input::placeholder {
     gap: 10px;
   }
 }
-.user-settings,
-.user-list {
+.settings-panel {
   margin-bottom: 20px;
 }
-.user-note {
+.settings-note {
   color: var(--muted, #7a8791);
   font-size: 13px;
   line-height: 1.5;
   padding: 0 24px 20px;
 }
-.user-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  border-top: 1px solid #e9ecee;
-}
-.user-row > div {
-  flex: 1;
-  min-width: 0;
-}
-.user-row small {
-  display: block;
-  margin-top: 5px;
-  color: #7a8791;
-}
-.user-toggle {
+.settings-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
 }
-.user-modal {
-  width: min(680px, calc(100vw - 32px));
-}
-.user-form {
+.settings-form {
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 20px 24px;
 }
-.user-form .user-form {
+.settings-form .settings-form {
   padding: 0;
 }
-.user-form label:not(.user-toggle) {
+.settings-form label:not(.settings-toggle) {
   display: flex;
   flex-direction: column;
   gap: 7px;
   font-size: 13px;
   font-weight: 600;
 }
-.user-form .user-note {
+.settings-form .settings-note {
   padding: 0;
 }
-.user-form button {
+.settings-form button {
   align-self: flex-start;
-}
-@media (max-width: 600px) {
-  .user-row {
-    flex-wrap: wrap;
-  }
-  .user-row > div {
-    flex-basis: 100%;
-  }
 }
 
 /* Browser-to-S3 transfer status */
@@ -1178,4 +1140,13 @@ input::placeholder {
   .object-info {
     flex-basis: 55%;
   }
+}
+
+.token-scopes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px 0;
 }

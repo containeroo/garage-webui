@@ -3,142 +3,74 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
-	"time"
 
-	kit "github.com/containeroo/appkit/auth"
-	"github.com/gi8lino/garage-webui/internal/http/auth"
-	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/http/auth"
+	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
 
-// session returns authentication state without exposing credentials.
+// session returns public credential metadata without exposing its secret.
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	required, err := s.auth.SetupRequired(r.Context())
-	if err != nil {
-		httpresponse.Error(w, "setup status unavailable", http.StatusServiceUnavailable)
+	id, err := s.auth.Authenticate(r)
+	if err != nil && !errors.Is(err, auth.ErrUnauthenticated) {
+		s.logger.Log(r.Context(), slog.LevelError, "garage session validation failed", "error", err)
+		httpresponse.Error(w, "garage authentication unavailable; check server logs", http.StatusServiceUnavailable)
+
 		return
 	}
 
-	user, role, err := s.auth.Authenticate(r)
-	if err != nil && !errors.Is(err, kit.ErrUnauthenticated) {
-		if s.logger != nil {
-			s.logger.Error("session authentication failed", "error", err)
-		}
-		httpresponse.Error(w, "authentication service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"mode":           s.auth.Mode(),
-		"oidcIssuer":     s.auth.OIDCIssuer(),
-		"user":           user,
-		"role":           role,
-		"setupRequired":  required,
-		"localLogin":     s.auth.LocalLoginEnabled(),
-		"uploadsEnabled": s.objects != nil,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"mode": id.Credential.Kind, "user": id.User, "scope": id.Scope, "uploadsEnabled": s.auth.S3URL != ""})
 }
 
-// setup creates the first administrator and starts their session.
-func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	var credentials struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&credentials); err != nil {
-		httpresponse.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	err := s.auth.Setup(w, r, credentials.Username, credentials.Password)
-	switch {
-	case errors.Is(err, auth.ErrSetupComplete):
-		httpresponse.Error(w, "setup is already complete", http.StatusConflict)
-	case errors.Is(err, auth.ErrInvalidSetup):
-		httpresponse.Error(w, err.Error(), http.StatusBadRequest)
-	case err != nil:
-		s.logger.Error("setup failed", "error", err)
-		httpresponse.Error(w, "setup failed", http.StatusInternalServerError)
-	default:
-		writeJSON(w, http.StatusCreated, map[string]string{"user": credentials.Username})
-	}
-}
-
-// login authenticates a local administrator.
+// login verifies a Garage credential and starts a revocable session.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	var credentials struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&credentials); err != nil {
-		httpresponse.Error(w, "invalid request", http.StatusBadRequest)
+	var credential auth.Credential
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&credential); err != nil {
+		httpresponse.Error(w, "invalid sign-in request", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.auth.Login(w, r, credentials.Username, credentials.Password); err != nil {
-		if errors.Is(err, kit.ErrUnauthenticated) {
-			httpresponse.Error(w, "invalid credentials", http.StatusUnauthorized)
+	if err := s.auth.Login(w, r, credential); err != nil {
+		if errors.Is(err, auth.ErrUnauthenticated) {
+			httpresponse.Error(w, "invalid Garage credentials", http.StatusUnauthorized)
 		} else {
-			if s.logger != nil {
-				s.logger.Error("login failed", "error", err)
-			}
-			httpresponse.Error(w, "authentication service unavailable", http.StatusServiceUnavailable)
+			s.logger.Log(r.Context(), slog.LevelError, "garage credential validation failed", "error", err)
+			httpresponse.Error(w, "garage authentication unavailable; check Garage Admin API availability and server logs", http.StatusServiceUnavailable)
 		}
+
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"user": credentials.Username})
+	w.WriteHeader(http.StatusNoContent)
 }
 
-// allowLogin bounds password attempts per immediate peer and per process.
+// allowLogin throttles requests by the immediate TCP peer on every replica.
+// Do not trust X-Forwarded-For without an explicitly trusted proxy boundary.
 func (s *Server) allowLogin(r *http.Request) bool {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		peer = r.RemoteAddr
 	}
 
-	s.loginMu.Lock()
-	defer s.loginMu.Unlock()
-	if s.loginCounts == nil || time.Since(s.loginWindow) >= time.Minute {
-		s.loginWindow = time.Now()
-		s.loginCounts = make(map[string]int)
+	permitted, err := s.loginLimiter.AllowLogin(r.Context(), peer)
+	if err != nil {
+		s.logger.Error("login rate limit unavailable", "error", err)
+		return false // Fail closed when the database is unavailable.
 	}
 
-	if len(s.loginCounts) >= 4096 && s.loginCounts[peer] == 0 {
-		return false
-	}
-
-	s.loginCounts[peer]++
-	return s.loginCounts[peer] <= 10
+	return permitted
 }
 
-// logout revokes the active session.
+// logout revokes the active credential session.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if err := s.auth.Logout(w, r); err != nil {
-		if s.logger != nil {
-			s.logger.Error("logout failed", "error", err)
-		}
-		httpresponse.Error(w, "could not sign out; please try again", http.StatusServiceUnavailable)
+		httpresponse.Error(w, "could not sign out", http.StatusServiceUnavailable)
 		return
 	}
+
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// oidcLogin redirects to the identity provider.
-func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
-	if err := s.auth.BeginOIDC(w, r); err != nil {
-		http.Error(w, "cannot start login", http.StatusBadRequest)
-	}
-}
-
-// oidcCallback completes the identity-provider flow.
-func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
-	if err := s.auth.Callback(w, r); err != nil {
-		s.logger.Warn("OIDC login failed", "error", err)
-		http.Error(w, "authentication failed", http.StatusUnauthorized)
-		return
-	}
-
-	// The outer prefix middleware rewrites application-relative redirects.
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

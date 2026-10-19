@@ -15,7 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gi8lino/garage-webui/internal/objectpath"
+	"github.com/containeroo/garage-webui/internal/objectpath"
+	"github.com/containeroo/garage-webui/internal/utils"
 )
 
 const (
@@ -41,16 +42,16 @@ type Presigner struct {
 // The endpoint must be a browser-reachable HTTP(S) origin.
 func New(rawURL, region, keyID, secret, publicURL string) (*Presigner, error) {
 	if rawURL == "" || region == "" || keyID == "" || secret == "" {
-		return nil, errors.New("S3 signing requires an endpoint, region and Garage-managed key")
+		return nil, errors.New("s3 signing requires an endpoint, region and Garage-managed key")
 	}
 
 	endpoint, err := url.Parse(rawURL)
 	if err != nil || !validS3Origin(endpoint) {
-		return nil, errors.New("S3 public URL must be an HTTP(S) origin without a path, credentials, query or fragment")
+		return nil, errors.New("s3 public URL must be an HTTP(S) origin without a path, credentials, query or fragment")
 	}
 
 	if strings.HasPrefix(publicURL, "https://") && endpoint.Scheme != "https" {
-		return nil, errors.New("HTTPS web UI requires an HTTPS S3 public URL")
+		return nil, errors.New("https web UI requires an HTTPS S3 public URL")
 	}
 
 	if strings.ContainsAny(region, "/\r\n ") || strings.ContainsAny(keyID, "\r\n") {
@@ -63,6 +64,11 @@ func New(rawURL, region, keyID, secret, publicURL string) (*Presigner, error) {
 		keyID:    keyID,
 		secret:   secret,
 	}, nil
+}
+
+// BucketsURL signs S3 ListBuckets to validate the supplied credentials.
+func (s *Presigner) BucketsURL(now time.Time) (string, error) {
+	return s.signedURL("GET", "/", nil, now)
 }
 
 // UploadURL signs a PUT for one object.
@@ -79,6 +85,7 @@ func (s *Presigner) DeleteURL(bucket, key string, now time.Time) (string, error)
 func (s *Presigner) DownloadURL(bucket, key string, now time.Time) (string, error) {
 	name := path.Base(key)
 	query := url.Values{"response-content-disposition": {"attachment; filename*=UTF-8''" + strings.ReplaceAll(url.PathEscape(name), "+", "%2B")}}
+
 	return s.objectURL("GET", bucket, key, query, now)
 }
 
@@ -132,6 +139,7 @@ func (s *Presigner) CopyURL(bucket, source, target string, now time.Time) (signe
 
 	header := (&url.URL{Path: "/" + bucket + "/" + source}).EscapedPath()
 	address, err := s.signedWithHeaders("PUT", "/"+bucket+"/"+target, nil, map[string]string{"x-amz-copy-source": header}, now)
+
 	return address, header, err
 }
 
@@ -154,6 +162,7 @@ func (s *Presigner) CopyPartURL(bucket, source, target, uploadID string, part in
 		"partNumber": {strconv.Itoa(part)},
 	}
 	address, err := s.signedWithHeaders("PUT", "/"+bucket+"/"+target, query, headers, now)
+
 	return address, headers, err
 }
 
@@ -207,7 +216,7 @@ func (s *Presigner) signedURL(method, objectPath string, parameters url.Values, 
 // signedWithHeaders binds required S3 headers to the SigV4 signature.
 func (s *Presigner) signedWithHeaders(method, objectPath string, parameters url.Values, headers map[string]string, now time.Time) (string, error) {
 	if s == nil {
-		return "", errors.New("S3 operations are not configured")
+		return "", errors.New("s3 operations are not configured")
 	}
 
 	u := *s.endpoint
@@ -253,6 +262,7 @@ func (s *Presigner) signedWithHeaders(method, objectPath string, parameters url.
 	signingKey := sign(serviceKey, "aws4_request")
 	query.Set("X-Amz-Signature", hex.EncodeToString(sign(signingKey, stringToSign)))
 	u.RawQuery = strings.ReplaceAll(query.Encode(), "+", "%20")
+
 	return u.String(), nil
 }
 
@@ -269,12 +279,13 @@ func validBucket(bucket string) bool {
 func sign(key []byte, value string) []byte {
 	h := hmac.New(sha256.New, key)
 	_, _ = h.Write([]byte(value))
+
 	return h.Sum(nil)
 }
 
 // validS3Origin rejects unsafe endpoint features and non-HTTP(S) URLs.
 func validS3Origin(endpoint *url.URL) bool {
-	if endpoint == nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+	if endpoint == nil || !utils.HasValidScheme(endpoint) {
 		return false
 	}
 

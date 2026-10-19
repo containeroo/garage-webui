@@ -30,8 +30,10 @@ func TestLoadMigrations(t *testing.T) {
 	assert.Equal(t, int64(2), migrations[1].version)
 
 	for name, files := range map[string]fstest.MapFS{
-		"invalid name": {"migrations/bad.sql": {}},
-		"zero version": {"migrations/000_first.sql": {}},
+		"invalid name":        {"migrations/bad.sql": {}},
+		"zero version":        {"migrations/000_first.sql": {}},
+		"missing description": {"migrations/001_.sql": {}},
+		"negative version":    {"migrations/-2_bad.sql": {}},
 		"duplicate": {
 			"migrations/001_first.sql": {},
 			"migrations/1_second.sql":  {},
@@ -40,6 +42,32 @@ func TestLoadMigrations(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadMigrations(files)
 			require.Error(t, err)
+		})
+	}
+}
+
+// TestMigrationVersion validates the simple numeric-prefix filename convention.
+func TestMigrationVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version int64
+		valid   bool
+	}{
+		{"001_initial.sql", 1, true},
+		{"12_add_indexes.sql", 12, true},
+		{"bad.sql", 0, false},
+		{"3_.sql", 0, false},
+		{"0_baseline.sql", 0, false},
+		{"-1_removed.sql", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version, err := migrationVersion(tc.name)
+			if tc.valid {
+				require.NoError(t, err)
+				assert.Equal(t, tc.version, version)
+			} else {
+				require.Error(t, err)
+			}
 		})
 	}
 }
@@ -68,17 +96,6 @@ func TestMigrationsIntegration(t *testing.T) {
 	store := New(pool)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	_, err = pool.Exec(ctx, `
-  CREATE TABLE webui_users (
-    username text PRIMARY KEY,
-    password_hash text NOT NULL
-  );
-
-  INSERT INTO webui_users (username, password_hash)
-  VALUES ('existing', 'existing-hash');
-`)
-	require.NoError(t, err)
-
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	for range 2 {
@@ -98,10 +115,7 @@ func TestMigrationsIntegration(t *testing.T) {
 	require.NoError(t, store.Migrate(ctx, logger))
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM webui_schema_migrations").Scan(&count))
-	assert.Equal(t, 8, count)
-	var passwordHash string
-	require.NoError(t, pool.QueryRow(ctx, "SELECT password_hash FROM webui_users WHERE username = $1", "existing").Scan(&passwordHash))
-	assert.Equal(t, "existing-hash", passwordHash)
+	assert.Equal(t, 2, count)
 
 	files := fstest.MapFS{
 		"migrations/001_initial.sql": {Data: []byte("SELECT 1")},
@@ -113,5 +127,5 @@ func TestMigrationsIntegration(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, "SELECT to_regclass('migration_rollback_test') IS NOT NULL").Scan(&tableExists))
 	assert.False(t, tableExists)
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM webui_schema_migrations").Scan(&count))
-	assert.Equal(t, 8, count)
+	assert.Equal(t, 1, count)
 }

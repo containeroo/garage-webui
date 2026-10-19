@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/gi8lino/garage-webui/internal/application/garage"
 )
 
 const maxUploadSize int64 = 5 << 30
@@ -90,7 +88,7 @@ type Result struct {
 // Prepare authorizes and signs an object operation.
 func (s *Service) Prepare(
 	ctx context.Context,
-	role string,
+	kind string,
 	input Request,
 	now time.Time,
 ) (Result, error) {
@@ -98,7 +96,7 @@ func (s *Service) Prepare(
 		return Result{}, ErrInvalid
 	}
 
-	if !canAccess(role, input.Action) {
+	if !supportedCredentialKind(kind) {
 		return Result{}, ErrForbidden
 	}
 
@@ -113,11 +111,11 @@ func (s *Service) Prepare(
 // PrepareUpload authorizes and signs a single-request upload.
 func (s *Service) PrepareUpload(
 	ctx context.Context,
-	role, bucketID, key string,
+	kind, bucketID, key string,
 	size int64,
 	now time.Time,
 ) (Result, error) {
-	if !garage.CanModify(role) {
+	if !supportedCredentialKind(kind) {
 		return Result{}, ErrForbidden
 	}
 
@@ -131,19 +129,11 @@ func (s *Service) PrepareUpload(
 	}
 
 	address, err := s.signer.UploadURL(ctx, id, alias, key, now)
+
 	return Result{
 		URL:    address,
 		Method: http.MethodPut,
 	}, err
-}
-
-// canAccess requires a recognized role and editor access for mutations.
-func canAccess(role, action string) bool {
-	if garage.CanModify(role) {
-		return true
-	}
-
-	return role == "viewer" && !objectMutation(action)
 }
 
 // sign dispatches a validated operation to its signer.
@@ -217,3 +207,7 @@ func multipartMethod(action string) string {
 		return http.MethodPost
 	}
 }
+
+// supportedCredentialKind accepts recognized Garage credential types for object operations.
+// Garage checks the individual key permissions when executing each signed S3 request.
+func supportedCredentialKind(kind string) bool { return kind == "admin" || kind == "s3" }

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 )
@@ -21,22 +21,12 @@ type corsRule struct {
 	MaxAgeSeconds int      `json:"MaxAgeSeconds,omitempty"`
 }
 
-// bucketCORS describes a bucket's existing CORS rules.
-type bucketCORS struct {
-	ID        string            `json:"id"`
-	CORSRules []json.RawMessage `json:"corsRules"`
-}
-
 // ensureCORS permits the operation's browser origin and retains all other rules.
 // CORS is configured using the Admin API, never with object signing keys.
-func (m *Provider) ensureCORS(ctx context.Context, bucketID, method string) error {
-	var bucket bucketCORS
-	if err := m.adminJSON(ctx, http.MethodGet, "GetBucketInfo", url.Values{"id": {bucketID}}, nil, &bucket); err != nil {
+func (m *Provider) ensureCORS(ctx context.Context, bucketID string) error {
+	bucket, err := m.admin.GetBucket(ctx, bucketID)
+	if err != nil {
 		return fmt.Errorf("read bucket CORS: %w", err)
-	}
-
-	if bucket.ID != bucketID {
-		return errors.New("garage returned a different bucket ID")
 	}
 
 	for _, raw := range bucket.CORSRules {
@@ -45,7 +35,7 @@ func (m *Provider) ensureCORS(ctx context.Context, bucketID, method string) erro
 			return fmt.Errorf("decode existing bucket CORS: %w", err)
 		}
 
-		if ruleAllowsMethod(rule, m.origin, method) && corsExposesETag(rule, method) {
+		if ruleAllowsAllObjectMethods(rule, m.origin) {
 			return nil
 		}
 	}
@@ -68,9 +58,7 @@ func (m *Provider) ensureCORS(ctx context.Context, bucketID, method string) erro
 	// S3 evaluates matching CORS rules in order; keep the managed rule first
 	// so a pre-existing rule without an exposed ETag cannot break multipart.
 	bucket.CORSRules = append([]json.RawMessage{raw}, bucket.CORSRules...)
-	if err := m.adminJSON(ctx, http.MethodPost, "UpdateBucket", url.Values{"id": {bucketID}}, map[string]any{
-		"corsRules": bucket.CORSRules,
-	}, nil); err != nil {
+	if err := m.admin.UpdateBucketCORS(ctx, bucketID, bucket.CORSRules); err != nil {
 		return fmt.Errorf("save bucket CORS: %w", err)
 	}
 
@@ -111,4 +99,15 @@ func corsExposesETag(rule corsRule, method string) bool {
 	return slices.ContainsFunc(rule.ExposeHeader, func(value string) bool {
 		return value == "*" || strings.EqualFold(value, "etag")
 	})
+}
+
+// ruleAllowsAllObjectMethods checks the full browser S3 workflow, including multipart.
+func ruleAllowsAllObjectMethods(rule corsRule, origin string) bool {
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete} {
+		if !ruleAllowsMethod(rule, origin, method) {
+			return false
+		}
+	}
+
+	return corsExposesETag(rule, http.MethodPut)
 }

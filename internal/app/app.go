@@ -9,10 +9,10 @@ import (
 
 	"github.com/containeroo/appkit/httpserver"
 	"github.com/containeroo/appkit/logging"
+	"github.com/containeroo/garage-webui/internal/bootstrap"
+	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/httpkit/grace"
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/garage-webui/internal/bootstrap"
-	"github.com/gi8lino/garage-webui/internal/flags"
 )
 
 // Run configures and serves the application.
@@ -29,7 +29,9 @@ func Run(
 			fmt.Fprint(stdout, err.Error()) // nolint:errcheck
 			return nil
 		}
+
 		fmt.Fprintln(stderr, err) // nolint:errcheck
+
 		return err
 	}
 
@@ -53,6 +55,7 @@ func Run(
 		logger.Error("initialize application", "error", err)
 		return err
 	}
+
 	defer application.Close()
 
 	handlers := httpserver.New(

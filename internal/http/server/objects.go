@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gi8lino/garage-webui/internal/application/objects"
-	"github.com/gi8lino/garage-webui/internal/http/middleware"
-	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
-	"github.com/gi8lino/garage-webui/internal/s3"
+	"github.com/containeroo/garage-webui/internal/application/objects"
+	"github.com/containeroo/garage-webui/internal/http/middleware"
+	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/s3"
 )
 
 // objectRequest contains the JSON representation of an object operation.
@@ -29,10 +29,16 @@ type objectRequest struct {
 // presignObject authorizes listing, downloading or deleting without proxying data.
 func (s *Server) presignObject(w http.ResponseWriter, r *http.Request) {
 	id, _ := middleware.RequestIdentity(r)
-	role := id.Role
+	kind := id.Credential.Kind
 
-	if s.objects == nil {
-		httpresponse.Error(w, "Garage S3 endpoint is not configured", http.StatusServiceUnavailable)
+	service, err := s.objectService(id)
+	if errors.Is(err, objects.ErrForbidden) {
+		httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
+		return
+	}
+
+	if err != nil {
+		httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -44,14 +50,14 @@ func (s *Server) presignObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.objects.Prepare(r.Context(), role, objects.Request(input), time.Now())
+	result, err := service.Prepare(r.Context(), kind, objects.Request(input), time.Now())
 	if errors.Is(err, objects.ErrInvalid) {
 		httpresponse.Error(w, "invalid object request", http.StatusBadRequest)
 		return
 	}
 
 	if errors.Is(err, objects.ErrForbidden) {
-		httpresponse.Error(w, "object mutation requires editor permissions", http.StatusForbidden)
+		httpresponse.Error(w, "object credentials required", http.StatusForbidden)
 		return
 	}
 
@@ -66,6 +72,7 @@ func (s *Server) presignObject(w http.ResponseWriter, r *http.Request) {
 		}
 
 		httpresponse.Error(w, "cannot prepare object operation", http.StatusBadGateway)
+
 		return
 	}
 

@@ -5,13 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	application "github.com/gi8lino/garage-webui/internal/application/garage"
-	"github.com/gi8lino/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/auth"
 )
 
 // Policies holds the dependencies used by the HTTP middleware.
 type Policies struct {
-	garage        *application.Service
 	auth          *auth.Service
 	s3Origin      string
 	logger        *slog.Logger
@@ -21,7 +19,6 @@ type Policies struct {
 
 // New constructs the middleware policies with their server dependencies.
 func New(
-	garage *application.Service,
 	authentication *auth.Service,
 	s3Origin string,
 	logger *slog.Logger,
@@ -29,7 +26,6 @@ func New(
 	allowLogin func(*http.Request) bool,
 ) *Policies {
 	return &Policies{
-		garage:        garage,
 		auth:          authentication,
 		s3Origin:      s3Origin,
 		logger:        logger,

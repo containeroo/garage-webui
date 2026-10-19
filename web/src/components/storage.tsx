@@ -40,11 +40,13 @@ export function BucketRows({
   onSelect,
   loaded,
   loading,
+  browseOnly = false,
 }: {
   buckets: Bucket[];
   onSelect: (b: Bucket, tab?: "overview" | "permissions" | "browse") => void;
   loaded: boolean;
   loading: boolean;
+  browseOnly?: boolean;
 }) {
   if (!loaded)
     return (
@@ -69,7 +71,7 @@ export function BucketRows({
         <div className="table-row bucket-columns" key={bucket.id}>
           <button
             className="item-name bucket-name-button"
-            onClick={() => onSelect(bucket, "overview")}
+            onClick={() => onSelect(bucket, browseOnly ? "browse" : "overview")}
           >
             <div className="item-icon">
               <Database size={16} />
@@ -89,17 +91,19 @@ export function BucketRows({
                 ["Permissions", "permissions", LockKeyhole],
                 ["Manage objects", "browse", FolderOpen],
               ] as const
-            ).map(([label, tab, Icon]) => (
-              <button
-                key={tab}
-                className="icon-button"
-                title={label}
-                aria-label={`${label}: ${bucket.globalAliases?.[0] || bucket.id}`}
-                onClick={() => onSelect(bucket, tab)}
-              >
-                <Icon size={16} />
-              </button>
-            ))}
+            )
+              .filter(([, tab]) => !browseOnly || tab === "browse")
+              .map(([label, tab, Icon]) => (
+                <button
+                  key={tab}
+                  className="icon-button"
+                  title={label}
+                  aria-label={`${label}: ${bucket.globalAliases?.[0] || bucket.id}`}
+                  onClick={() => onSelect(bucket, tab)}
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
           </div>
         </div>
       ))}

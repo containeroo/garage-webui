@@ -5,9 +5,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/gi8lino/garage-webui/internal/app"
-	"github.com/gi8lino/garage-webui/themes"
-	"github.com/gi8lino/garage-webui/web"
+	"github.com/containeroo/garage-webui/internal/app"
+	"github.com/containeroo/garage-webui/themes"
+	"github.com/containeroo/garage-webui/web"
 )
 
 var (

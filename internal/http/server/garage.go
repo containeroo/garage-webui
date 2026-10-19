@@ -1,23 +1,46 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"net/url"
 
-	"github.com/gi8lino/garage-webui/internal/http/middleware"
-	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/application/objects"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
+	"github.com/containeroo/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/middleware"
+	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
 
 // garageRequest forwards only approved operations for authenticated administrators.
 func (s *Server) garageRequest(w http.ResponseWriter, r *http.Request) {
 	id, _ := middleware.RequestIdentity(r)
-	role := id.Role
 	op := r.PathValue("operation")
+	if id.Credential.Kind == "s3" {
+		s.s3BucketRequest(w, r, id)
+		return
+	}
+
+	operation, exists := admin.ParseOperation(op)
+	if !exists {
+		httpresponse.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	method, _ := operation.Method()
+	if method != r.Method {
+		httpresponse.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !id.Allows(op) {
+		httpresponse.Error(w, "token does not allow this operation", http.StatusForbidden)
+		return
+	}
+
 	query := r.URL.Query()
-	var body io.Reader
+	var body []byte
 	if r.Method == http.MethodPost {
 		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 		if err != nil {
@@ -31,18 +54,64 @@ func (s *Server) garageRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(data) > 0 {
-			body = bytes.NewReader(data)
+			body = data
 		}
 	}
 
-	status, data, err := s.garage.Request(r.Context(), role, r.Method, op, url.Values(query), body)
+	if op == "DeleteBucket" {
+		if !canCleanupBucket(id) {
+			httpresponse.Error(w, "deleting a bucket also requires DeleteKey and GetBucketInfo scopes", http.StatusForbidden)
+			return
+		}
+
+		status, result, err := s.objects.DeleteBucket(r.Context(), id, query.Get("id"))
+		if err != nil {
+			if errors.Is(err, objects.ErrForbidden) {
+				httpresponse.Error(w, "insufficient Garage token scope", http.StatusForbidden)
+				return
+			}
+
+			s.logger.Error("delete Garage bucket", "error", err)
+			if status < 400 || status > 499 {
+				status = http.StatusBadGateway
+			}
+
+			httpresponse.Error(w, "could not delete Garage bucket or managed keys", status)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(result)
+
+		return
+	}
+
+	client, err := s.auth.AdminClient(id)
 	if err != nil {
-		s.logger.Error("Garage request failed", "operation", op, "error", err)
-		httpresponse.Error(w, "Garage is unavailable", http.StatusBadGateway)
+		httpresponse.Error(w, "invalid Garage endpoint", http.StatusBadGateway)
+		return
+	}
+
+	query.Del("showSecretKey")
+	status, data, err := client.Proxy(r.Context(), operation, query, body)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("garage request failed", "operation", op, "error", err)
+		}
+
+		httpresponse.Error(w, "garage is unavailable", http.StatusBadGateway)
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(data)
+}
+
+// canCleanupBucket checks the additional Garage scopes required for key cleanup.
+func canCleanupBucket(id auth.Identity) bool {
+	return id.Allows("DeleteKey") && id.Allows("GetBucketInfo")
 }

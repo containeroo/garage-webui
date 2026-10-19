@@ -1,0 +1,35 @@
+package auth
+
+import "context"
+
+// Verify validates exactly one supported Garage credential kind.
+func (s *Service) Verify(ctx context.Context, c Credential) (Identity, error) {
+	switch c.Kind {
+	case "admin":
+		if !validAdminCredential(c) {
+			return Identity{}, ErrUnauthenticated
+		}
+		return s.Admin(ctx, c.Token)
+	case "s3":
+		if !validS3Credential(c) {
+			return Identity{}, ErrUnauthenticated
+		}
+		if _, err := s.Buckets(ctx, c); err != nil {
+			return Identity{}, err
+		}
+		return Identity{Credential: c, User: c.AccessKeyID}, nil
+	default:
+		return Identity{}, ErrUnauthenticated
+	}
+}
+
+// validAdminCredential rejects mixed authentication methods and oversized secrets.
+func validAdminCredential(c Credential) bool {
+	return c.Token != "" && len(c.Token) <= 2048 && c.AccessKeyID == "" && c.SecretAccessKey == ""
+}
+
+// validS3Credential rejects mixed authentication methods and oversized secrets.
+func validS3Credential(c Credential) bool {
+	return c.Token == "" && c.AccessKeyID != "" && c.SecretAccessKey != "" &&
+		len(c.AccessKeyID) <= 256 && len(c.SecretAccessKey) <= 1024
+}

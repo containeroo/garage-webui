@@ -184,11 +184,11 @@ export function BucketObjects({
       }
       if (item.size > 1024 * 1024)
         throw new Error(
-          "Text preview is limited to 1 MiB. Download the file instead.",
+          "text preview is limited to 1 MiB. Download the file instead.",
         );
       const response = await fetch(signed.url, { credentials: "omit" });
       if (!response.ok)
-        throw new Error(`Preview failed (HTTP ${response.status})`);
+        throw new Error(`preview failed (HTTP ${response.status})`);
       setPreview({
         key: item.key,
         url: signed.url,
@@ -257,7 +257,7 @@ export function BucketObjects({
       resetPage();
       refresh();
     } catch (cause) {
-      setError(`Copy${move ? " / move" : ""} failed: ${errorMessage(cause)}`);
+      setError(`copy${move ? " / move" : ""} failed: ${errorMessage(cause)}`);
     } finally {
       setBusy(false);
     }

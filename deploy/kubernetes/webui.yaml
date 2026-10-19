@@ -45,13 +45,11 @@ spec:
               value: postgres://garage_webui:$(POSTGRES_PASSWORD)@garage-postgres:5432/garage_webui?sslmode=disable
             - name: GARAGE_WEBUI__GARAGE_URL
               value: http://garage:3903
-            - name: GARAGE_WEBUI__GARAGE_TOKEN
+            - name: GARAGE_WEBUI__SESSION_SECRET
               valueFrom:
                 secretKeyRef:
                   name: garage-webui-secrets
-                  key: garage-admin-token
-            - name: GARAGE_WEBUI__AUTH_MODE
-              value: local
+                  key: session-secret
             - name: GARAGE_WEBUI__PUBLIC_URL
               value: http://localhost:8080
             - name: GARAGE_WEBUI__S3_PUBLIC_URL

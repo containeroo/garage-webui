@@ -104,7 +104,7 @@ export function parseListPage(xml: string): ObjectPage {
     ? nodeText(document.documentElement, "NextContinuationToken")
     : "";
   if (truncated && !nextToken)
-    throw new Error("Garage did not return a page token");
+    throw new Error("garage did not return a page token");
   return { items, folders, nextToken };
 }
 
@@ -122,7 +122,7 @@ export async function listObjects(
   );
   const response = await fetch(signed.url, { credentials: "omit", signal });
   if (!response.ok)
-    throw new Error(`Garage could not list objects (HTTP ${response.status})`);
+    throw new Error(`garage could not list objects (HTTP ${response.status})`);
   return parseListPage(await response.text());
 }
 
@@ -146,7 +146,7 @@ function transfer(
     xhr.onload = () => {
       finish();
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(`Garage rejected the upload (HTTP ${xhr.status})`));
+        reject(new Error(`garage rejected the upload (HTTP ${xhr.status})`));
       } else {
         onProgress(body.size);
         resolve(xhr.getResponseHeader("ETag") || "");
@@ -154,7 +154,7 @@ function transfer(
     };
     xhr.onerror = () => {
       finish();
-      reject(new Error("Cannot reach the Garage S3 endpoint"));
+      reject(new Error("cannot reach the Garage S3 endpoint"));
     };
     xhr.onabort = () => {
       finish();
@@ -183,7 +183,7 @@ export async function uploadObject(
   onProgress: (loaded: number) => void,
 ): Promise<void> {
   if (!file.size || file.size > MAX_OBJECT)
-    throw new Error("File must be between 1 byte and 5 TiB");
+    throw new Error("file must be between 1 byte and 5 TiB");
   if (file.size <= PART_THRESHOLD) {
     const signed = await request<SignedOperation>("api/uploads/presign", {
       method: "POST",
@@ -212,13 +212,13 @@ export async function uploadObject(
   });
   if (!created.ok)
     throw new Error(
-      `Garage could not start multipart upload (${created.status})`,
+      `garage could not start multipart upload (${created.status})`,
     );
   const uploadId = nodeText(
     parseXML(await created.text()).documentElement,
     "UploadId",
   );
-  if (!uploadId) throw new Error("Garage returned no multipart upload ID");
+  if (!uploadId) throw new Error("garage returned no multipart upload ID");
   const parts: { number: number; etag: string }[] = [];
   const chunk = partSize(file.size);
   try {
@@ -239,7 +239,7 @@ export async function uploadObject(
       );
       if (!etag)
         throw new Error(
-          "Garage did not expose the multipart ETag; check bucket CORS",
+          "garage did not expose the multipart ETag; check bucket CORS",
         );
       parts.push({ number, etag });
     }
@@ -258,7 +258,7 @@ export async function uploadObject(
     });
     if (!response.ok)
       throw new Error(
-        `Garage could not complete upload (HTTP ${response.status})`,
+        `garage could not complete upload (HTTP ${response.status})`,
       );
     parseXML(await response.text());
     onProgress(file.size);
@@ -304,7 +304,7 @@ export async function deleteObject(
   });
   if (!response.ok)
     throw new Error(
-      `Garage could not delete “${key}” (HTTP ${response.status})`,
+      `garage could not delete “${key}” (HTTP ${response.status})`,
     );
 }
 
@@ -316,7 +316,7 @@ export async function copyObject(
   size: number,
 ): Promise<void> {
   if (size < 0 || size > MAX_OBJECT)
-    throw new Error("Unsupported source object size");
+    throw new Error("unsupported source object size");
   if (size <= 5 * 1024 ** 3) {
     const signed = await signOperation(bucketId, "copy", { sourceKey, key });
     const response = await fetch(signed.url, {
@@ -326,7 +326,7 @@ export async function copyObject(
     });
     if (!response.ok)
       throw new Error(
-        `Garage could not copy “${sourceKey}” (HTTP ${response.status})`,
+        `garage could not copy “${sourceKey}” (HTTP ${response.status})`,
       );
     parseXML(await response.text());
     return;
@@ -348,12 +348,12 @@ async function copyMultipart(
     credentials: "omit",
   });
   if (!created.ok)
-    throw new Error(`Cannot initiate S3 copy (${created.status})`);
+    throw new Error(`cannot initiate S3 copy (${created.status})`);
   const uploadId = nodeText(
     parseXML(await created.text()).documentElement,
     "UploadId",
   );
-  if (!uploadId) throw new Error("Garage returned no copy upload ID");
+  if (!uploadId) throw new Error("garage returned no copy upload ID");
   const parts: { number: number; etag: string }[] = [];
   const chunk = partSize(size);
   try {
@@ -371,12 +371,12 @@ async function copyMultipart(
         headers: signed.copyHeaders || {},
       });
       if (!response.ok)
-        throw new Error(`Cannot copy part ${number} (${response.status})`);
+        throw new Error(`cannot copy part ${number} (${response.status})`);
       const etag = nodeText(
         parseXML(await response.text()).documentElement,
         "ETag",
       );
-      if (!etag) throw new Error("Garage did not return a copy-part ETag");
+      if (!etag) throw new Error("garage did not return a copy-part ETag");
       parts.push({ number, etag });
     }
     const body = `<CompleteMultipartUpload>${parts.map(({ number, etag }) => `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXML(etag)}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
@@ -390,7 +390,7 @@ async function copyMultipart(
       credentials: "omit",
     });
     if (!response.ok)
-      throw new Error(`Cannot complete S3 copy (${response.status})`);
+      throw new Error(`cannot complete S3 copy (${response.status})`);
     parseXML(await response.text());
   } catch (cause) {
     await abortMultipart(async () => {
