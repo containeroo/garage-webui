@@ -15,7 +15,7 @@ services:
       - garage-data:/var/lib/garage/data
 
   garage-ready:
-    image: curlimages/curl:8.12.1
+    image: curlimages/curl:8.23.0
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
