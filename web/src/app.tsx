@@ -470,7 +470,13 @@ function Workspace({
                 </section>
               )}
               {page === "users" && (
-                <UserManagement request={request} currentUser={session.user} />
+                <UserManagement
+                  request={request}
+                  currentUser={session.user}
+                  mode={session.mode}
+                  localLogin={session.localLogin}
+                  oidcIssuer={session.oidcIssuer || ""}
+                />
               )}
               {page === "profile" && (
                 <ProfileSettings

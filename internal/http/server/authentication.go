@@ -28,7 +28,15 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		httpresponse.Error(w, "authentication service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mode": s.auth.Mode(), "user": user, "role": role, "setupRequired": required, "localLogin": s.auth.LocalLoginEnabled(), "uploadsEnabled": s.objects != nil})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode":           s.auth.Mode(),
+		"oidcIssuer":     s.auth.OIDCIssuer(),
+		"user":           user,
+		"role":           role,
+		"setupRequired":  required,
+		"localLogin":     s.auth.LocalLoginEnabled(),
+		"uploadsEnabled": s.objects != nil,
+	})
 }
 
 // setup creates the first administrator and starts their session.

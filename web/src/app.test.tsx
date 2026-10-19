@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./app";
+import { UserManagement } from "./users";
 import { BucketObjects } from "./components/objects";
 import { QuestionProvider } from "./components/ui/questions";
 import * as s3 from "./s3";
@@ -437,3 +438,71 @@ test("loads and saves the account theme", async () => {
     ).toBeTruthy(),
   );
 });
+
+test.each([
+  { mode: "oidc", localLogin: false },
+  { mode: "proxy", localLogin: true },
+  { mode: "local", localLogin: true },
+])(
+  "user sign-in settings follow $mode authentication",
+  async ({ mode, localLogin }) => {
+    const account = {
+      username: "alice",
+      role: "admin",
+      email: "",
+      displayName: "",
+      groups: [],
+      externalGroups: [],
+      identities: [
+        {
+          provider: "oidc",
+          issuer: "https://identity.example",
+          subject: "active-subject",
+        },
+        {
+          provider: "oidc",
+          issuer: "https://old.example",
+          subject: "old-subject",
+        },
+        { provider: "proxy", issuer: "", subject: "proxy-user" },
+      ],
+      enabled: true,
+      hasPassword: true,
+      localCredentialEnabled: true,
+    };
+    const request = vi.fn(async (path: string) => {
+      if (path === "api/users") return [account];
+      if (path === "api/registration") return { enabled: false };
+      return [];
+    });
+    const user = userEvent.setup();
+    render(
+      <QuestionProvider>
+        <UserManagement
+          request={request as never}
+          currentUser="alice"
+          mode={mode}
+          localLogin={localLogin}
+          oidcIssuer="https://identity.example"
+        />
+      </QuestionProvider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "Manage" }));
+    const dialog = screen.getByRole("dialog", { name: "Manage alice" });
+    expect(within(dialog).queryByText(/old-subject/)).toBeNull();
+    expect(within(dialog).queryByText(/active-subject/) !== null).toBe(
+      mode === "oidc",
+    );
+    expect(within(dialog).queryByText(/proxy-user/) !== null).toBe(
+      mode === "proxy",
+    );
+    expect(within(dialog).queryByLabelText("Provider")).toBeNull();
+    expect(within(dialog).queryByLabelText("Set local password") !== null).toBe(
+      localLogin,
+    );
+    if (!localLogin)
+      expect(
+        within(dialog).getByText(/Local password sign-in is disabled/),
+      ).toBeTruthy();
+  },
+);

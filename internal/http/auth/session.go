@@ -11,6 +11,9 @@ import (
 // Mode returns the configured authentication mode.
 func (s *Service) Mode() string { return string(s.mode) }
 
+// OIDCIssuer returns the configured OIDC issuer, if enabled.
+func (s *Service) OIDCIssuer() string { return s.issuer }
+
 // LocalLoginEnabled reports whether local sign-in is available.
 func (s *Service) LocalLoginEnabled() bool { return s.mode == kit.ModeLocal || s.localLogin }
 

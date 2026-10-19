@@ -28,9 +28,15 @@ type Request = <T>(path: string, options?: RequestInit) => Promise<T>;
 export function UserManagement({
   request,
   currentUser,
+  mode,
+  localLogin,
+  oidcIssuer,
 }: {
   request: Request;
   currentUser: string;
+  mode: string;
+  localLogin: boolean;
+  oidcIssuer: string;
 }) {
   const { confirm, prompt } = useQuestions();
   const [users, setUsers] = useState<Account[]>([]);
@@ -48,8 +54,6 @@ export function UserManagement({
   const returnFocus = useRef<HTMLElement | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [provider, setProvider] = useState("proxy");
-  const [issuer, setIssuer] = useState("");
   const [subject, setSubject] = useState("");
   const [role, setRole] = useState("viewer");
   const [email, setEmail] = useState("");
@@ -110,134 +114,149 @@ export function UserManagement({
           {error}
         </div>
       )}
-      <section className="panel user-settings">
-        <div className="panel-head">
-          <div>
-            <h2>External registration</h2>
-          </div>
-          <label className="user-toggle">
-            <input
-              type="checkbox"
-              checked={registration}
-              onChange={(event) =>
-                void change("api/registration", "PUT", {
-                  enabled: event.target.checked,
-                })
-              }
-            />{" "}
-            Enabled
-          </label>
-        </div>
-        <p className="user-note">
-          The configured administrator group grants elevated access. Existing
-          names are never linked automatically.
-        </p>
-      </section>
-      {pending.length > 0 && (
-        <section className="panel user-list">
+      {mode !== "local" && (
+        <section className="panel user-settings">
           <div className="panel-head">
             <div>
-              <h2>
-                Pending OIDC identities{" "}
-                <span className="count">{pending.length}</span>
-              </h2>
+              <h2>External registration</h2>
             </div>
+            <label className="user-toggle">
+              <input
+                type="checkbox"
+                checked={registration}
+                onChange={(event) =>
+                  void change("api/registration", "PUT", {
+                    enabled: event.target.checked,
+                  })
+                }
+              />{" "}
+              Enabled
+            </label>
           </div>
-          {pending.map((identity) => {
-            const key = JSON.stringify([identity.issuer, identity.subject]);
-            const target = pendingTarget[key] || "";
-            const binding = {
-              provider: identity.provider,
-              issuer: identity.issuer,
-              subject: identity.subject,
-            };
-            return (
-              <div className="user-row" key={key}>
-                <div>
-                  <strong>
-                    {identity.username} · {identity.status}
-                  </strong>
-                  <small>
-                    {identity.issuer} · {identity.subject}
-                  </small>
-                </div>
-                {identity.status === "rejected" ? (
-                  <button
-                    className="secondary"
-                    onClick={() =>
-                      void change(
-                        "api/pending-identities/reopen",
-                        "POST",
-                        binding,
-                      )
-                    }
-                  >
-                    Reopen
-                  </button>
-                ) : (
-                  <>
-                    <select
-                      aria-label={`Account for ${identity.username}`}
-                      value={target}
-                      onChange={(event) =>
-                        setPendingTarget({
-                          ...pendingTarget,
-                          [key]: event.target.value,
-                        })
-                      }
-                    >
-                      <option value="">Choose account</option>
-                      {users.map((user) => (
-                        <option key={user.username} value={user.username}>
-                          {user.username}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="secondary"
-                      disabled={!target}
-                      onClick={() =>
-                        void change(
-                          `${accountPath(target)}/identities`,
-                          "POST",
-                          binding,
-                        )
-                      }
-                    >
-                      Link
-                    </button>
-                    <button
-                      className="secondary"
-                      onClick={() =>
-                        void change("api/pending-identities/approve", "POST", {
-                          identity: binding,
-                          username: identity.username,
-                        })
-                      }
-                    >
-                      Create account
-                    </button>
-                    <button
-                      className="icon-button danger"
-                      title="Reject identity"
-                      onClick={async () => {
-                        if (await confirm("Reject this identity?"))
-                          void change(
-                            "api/pending-identities",
-                            "DELETE",
-                            binding,
-                          );
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })}
+          <p className="user-note">
+            The configured administrator group grants elevated access. Existing
+            names are never linked automatically.
+          </p>
         </section>
       )}
+      {mode === "oidc" &&
+        pending.some((identity) => identity.issuer === oidcIssuer) && (
+          <section className="panel user-list">
+            <div className="panel-head">
+              <div>
+                <h2>
+                  Pending OIDC identities{" "}
+                  <span className="count">
+                    {
+                      pending.filter(
+                        (identity) => identity.issuer === oidcIssuer,
+                      ).length
+                    }
+                  </span>
+                </h2>
+              </div>
+            </div>
+            {pending
+              .filter((identity) => identity.issuer === oidcIssuer)
+              .map((identity) => {
+                const key = JSON.stringify([identity.issuer, identity.subject]);
+                const target = pendingTarget[key] || "";
+                const binding = {
+                  provider: identity.provider,
+                  issuer: identity.issuer,
+                  subject: identity.subject,
+                };
+                return (
+                  <div className="user-row" key={key}>
+                    <div>
+                      <strong>
+                        {identity.username} · {identity.status}
+                      </strong>
+                      <small>
+                        {identity.issuer} · {identity.subject}
+                      </small>
+                    </div>
+                    {identity.status === "rejected" ? (
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          void change(
+                            "api/pending-identities/reopen",
+                            "POST",
+                            binding,
+                          )
+                        }
+                      >
+                        Reopen
+                      </button>
+                    ) : (
+                      <>
+                        <select
+                          aria-label={`Account for ${identity.username}`}
+                          value={target}
+                          onChange={(event) =>
+                            setPendingTarget({
+                              ...pendingTarget,
+                              [key]: event.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Choose account</option>
+                          {users.map((user) => (
+                            <option key={user.username} value={user.username}>
+                              {user.username}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="secondary"
+                          disabled={!target}
+                          onClick={() =>
+                            void change(
+                              `${accountPath(target)}/identities`,
+                              "POST",
+                              binding,
+                            )
+                          }
+                        >
+                          Link
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            void change(
+                              "api/pending-identities/approve",
+                              "POST",
+                              {
+                                identity: binding,
+                                username: identity.username,
+                              },
+                            )
+                          }
+                        >
+                          Create account
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          title="Reject identity"
+                          onClick={async () => {
+                            if (await confirm("Reject this identity?"))
+                              void change(
+                                "api/pending-identities",
+                                "DELETE",
+                                binding,
+                              );
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+          </section>
+        )}
       <section className="panel user-list">
         <div className="panel-head">
           <div>
@@ -333,20 +352,24 @@ export function UserManagement({
                   onChange={(event) => setUsername(event.target.value)}
                 />
               </label>
-              <label>
-                Local password (optional)
-                <input
-                  type="password"
-                  minLength={12}
-                  maxLength={72}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-              <p className="user-note">
-                Without a password, link an external identity to allow sign-in.
-              </p>
+              {localLogin && (
+                <label>
+                  Local password (optional)
+                  <input
+                    type="password"
+                    minLength={12}
+                    maxLength={72}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="new-password"
+                  />
+                </label>
+              )}
+              {mode !== "local" && (
+                <p className="user-note">
+                  Link an external identity to allow sign-in.
+                </p>
+              )}
               <button className="primary">Create user</button>
             </form>
           ) : (
@@ -354,8 +377,11 @@ export function UserManagement({
               <>
                 <div className="detail-section user-form">
                   <h3>Account</h3>
-                  {!selected.identities.some(
-                    (identity) => identity.provider === "proxy",
+                  {!(
+                    mode === "proxy" &&
+                    selected.identities.some(
+                      (identity) => identity.provider === "proxy",
+                    )
                   ) && (
                     <form
                       className="user-form"
@@ -522,21 +548,6 @@ export function UserManagement({
                     />{" "}
                     Account enabled
                   </label>
-                  <label className="user-toggle">
-                    <input
-                      type="checkbox"
-                      checked={selected.localCredentialEnabled}
-                      disabled={selected.username === currentUser}
-                      onChange={(event) =>
-                        void change(
-                          `${accountPath(selected.username)}/credential`,
-                          "PUT",
-                          { enabled: event.target.checked },
-                        )
-                      }
-                    />{" "}
-                    Local password enabled
-                  </label>
                   <button
                     className="secondary"
                     onClick={async () => {
@@ -555,145 +566,195 @@ export function UserManagement({
                   >
                     Sign out all sessions
                   </button>
-                  <form
-                    className="user-form"
-                    onSubmit={async (event) => {
-                      event.preventDefault();
-                      if (
-                        await change(
-                          accountPath(selected.username),
-                          "PUT",
-                          { enabled: selected.enabled, password },
-                          selected.username === currentUser,
-                        )
-                      )
-                        setPassword("");
-                    }}
-                  >
-                    <label>
-                      Set local password
-                      <input
-                        type="password"
-                        required
-                        minLength={12}
-                        maxLength={72}
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        autoComplete="new-password"
-                      />
-                    </label>
-                    <button className="secondary">Update password</button>
-                  </form>
                 </div>
                 <div className="detail-section user-form">
-                  <h3>External identities</h3>
-                  {selected.identities.length === 0 && (
-                    <p className="user-note">No identities linked.</p>
-                  )}
-                  {selected.identities.map((identity) => (
-                    <div
-                      className="grant"
-                      key={`${identity.provider}:${identity.issuer}:${identity.subject}`}
-                    >
-                      <div>
-                        <strong>{identity.provider}</strong>
-                        <small>
-                          {identity.issuer && `${identity.issuer} · `}
-                          {identity.subject}
-                        </small>
-                      </div>
-                      {identity.provider === "proxy" && (
-                        <button
-                          className="secondary"
-                          onClick={async () => {
-                            const newSubject = await prompt(
-                              "New trusted-proxy username",
-                              identity.subject,
-                            );
-                            if (newSubject && newSubject !== identity.subject)
-                              void change(
-                                `${accountPath(selected.username)}/identities/proxy/relink`,
-                                "POST",
-                                { oldSubject: identity.subject, newSubject },
-                              );
-                          }}
-                        >
-                          Relink
-                        </button>
+                  <h3>{mode === "local" ? "Sign-in" : "External identity"}</h3>
+                  <p className="user-note">
+                    Sign-in method:{" "}
+                    <strong>
+                      {mode === "oidc"
+                        ? "OpenID Connect"
+                        : mode === "proxy"
+                          ? "Trusted proxy"
+                          : "Local password"}
+                    </strong>
+                  </p>
+                  {mode !== "local" && (
+                    <>
+                      <h4>Connected account</h4>
+                      {selected.identities.filter(
+                        (identity) =>
+                          identity.provider === mode &&
+                          (mode !== "oidc" || identity.issuer === oidcIssuer),
+                      ).length === 0 && (
+                        <p className="user-note">No identity linked.</p>
                       )}
-                      <button
-                        className="icon-button danger"
-                        title="Unlink identity"
-                        onClick={async () => {
+                      {selected.identities
+                        .filter(
+                          (identity) =>
+                            identity.provider === mode &&
+                            (mode !== "oidc" || identity.issuer === oidcIssuer),
+                        )
+                        .map((identity) => (
+                          <div
+                            className="grant"
+                            key={`${identity.provider}:${identity.issuer}:${identity.subject}`}
+                          >
+                            <div className="identity-details">
+                              <strong>
+                                {mode === "oidc"
+                                  ? "OpenID Connect"
+                                  : "Trusted proxy"}{" "}
+                                · Linked
+                              </strong>
+                              {identity.issuer && (
+                                <small>Issuer: {identity.issuer}</small>
+                              )}
+                              <small>
+                                {mode === "oidc" ? "Subject" : "Proxy username"}
+                                : {identity.subject}
+                              </small>
+                            </div>
+                            {mode === "proxy" && (
+                              <button
+                                className="secondary"
+                                onClick={async () => {
+                                  const newSubject = await prompt(
+                                    "New trusted-proxy username",
+                                    identity.subject,
+                                  );
+                                  if (
+                                    newSubject &&
+                                    newSubject !== identity.subject
+                                  )
+                                    void change(
+                                      `${accountPath(selected.username)}/identities/proxy/relink`,
+                                      "POST",
+                                      {
+                                        oldSubject: identity.subject,
+                                        newSubject,
+                                      },
+                                    );
+                                }}
+                              >
+                                Relink
+                              </button>
+                            )}
+                            <button
+                              className="icon-button danger"
+                              aria-label="Unlink identity"
+                              title="Unlink identity"
+                              onClick={async () => {
+                                if (
+                                  await confirm(
+                                    "Unlink this identity? Existing sessions will be revoked.",
+                                  )
+                                )
+                                  void change(
+                                    `${accountPath(selected.username)}/identities`,
+                                    "DELETE",
+                                    identity,
+                                  );
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      <form
+                        className="user-form"
+                        onSubmit={async (event) => {
+                          event.preventDefault();
                           if (
-                            await confirm(
-                              "Unlink this identity? Existing sessions will be revoked.",
+                            await change(
+                              `${accountPath(selected.username)}/identities`,
+                              "POST",
+                              {
+                                provider: mode,
+                                issuer: mode === "oidc" ? oidcIssuer : "",
+                                subject,
+                              },
                             )
                           )
-                            void change(
-                              `${accountPath(selected.username)}/identities`,
-                              "DELETE",
-                              identity,
-                            );
+                            setSubject("");
                         }}
                       >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  <form
-                    className="user-form"
-                    onSubmit={async (event) => {
-                      event.preventDefault();
-                      if (
-                        await change(
-                          `${accountPath(selected.username)}/identities`,
-                          "POST",
-                          {
-                            provider,
-                            issuer: provider === "oidc" ? issuer : "",
-                            subject,
-                          },
-                        )
-                      ) {
-                        setSubject("");
-                        setIssuer("");
-                      }
-                    }}
-                  >
-                    <label>
-                      Provider
-                      <select
-                        value={provider}
-                        onChange={(event) => setProvider(event.target.value)}
-                      >
-                        <option value="proxy">Trusted proxy</option>
-                        <option value="oidc">OIDC</option>
-                      </select>
-                    </label>
-                    {provider === "oidc" && (
-                      <label>
-                        OIDC issuer
+                        <label>
+                          {mode === "oidc" ? "OIDC subject" : "Proxy username"}
+                          <input
+                            required
+                            value={subject}
+                            onChange={(event) => setSubject(event.target.value)}
+                          />
+                        </label>
+                        <button className="secondary">
+                          <Plus size={15} /> Link identity
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </div>
+                <div className="detail-section user-form">
+                  <h3>{mode === "local" ? "Password" : "Emergency access"}</h3>
+                  {!localLogin ? (
+                    <p className="user-note">
+                      Local password sign-in is disabled for this deployment.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="user-note">
+                        {selected.hasPassword
+                          ? "A local password is configured."
+                          : "No local password is configured."}
+                      </p>
+                      <label className="user-toggle">
                         <input
-                          required
-                          type="url"
-                          value={issuer}
-                          onChange={(event) => setIssuer(event.target.value)}
-                        />
+                          type="checkbox"
+                          checked={selected.localCredentialEnabled}
+                          disabled={selected.username === currentUser}
+                          onChange={(event) =>
+                            void change(
+                              `${accountPath(selected.username)}/credential`,
+                              "PUT",
+                              { enabled: event.target.checked },
+                            )
+                          }
+                        />{" "}
+                        Local password enabled
                       </label>
-                    )}
-                    <label>
-                      {provider === "oidc" ? "OIDC subject" : "Proxy username"}
-                      <input
-                        required
-                        value={subject}
-                        onChange={(event) => setSubject(event.target.value)}
-                      />
-                    </label>
-                    <button className="secondary">
-                      <Plus size={15} /> Link identity
-                    </button>
-                  </form>
+                      <form
+                        className="user-form"
+                        onSubmit={async (event) => {
+                          event.preventDefault();
+                          if (
+                            await change(
+                              accountPath(selected.username),
+                              "PUT",
+                              { enabled: selected.enabled, password },
+                              selected.username === currentUser,
+                            )
+                          )
+                            setPassword("");
+                        }}
+                      >
+                        <label>
+                          Set local password
+                          <input
+                            type="password"
+                            required
+                            minLength={12}
+                            maxLength={72}
+                            value={password}
+                            onChange={(event) =>
+                              setPassword(event.target.value)
+                            }
+                            autoComplete="new-password"
+                          />
+                        </label>
+                        <button className="secondary">Update password</button>
+                      </form>
+                    </>
+                  )}
                 </div>
                 {selected.username !== currentUser && (
                   <button

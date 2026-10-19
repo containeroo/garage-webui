@@ -1,5 +1,6 @@
 export type Session = {
   mode: string;
+  oidcIssuer?: string;
   user: string;
   role: string;
   setupRequired: boolean;

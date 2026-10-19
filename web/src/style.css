@@ -605,6 +605,16 @@ code {
   align-items: center;
   font-size: 13px;
 }
+.identity-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.identity-details small {
+  color: var(--theme-muted, #7a8791);
+}
 .delete-bucket {
   border: 1px solid #eedcda;
   background: var(--theme-surface, #fff);
