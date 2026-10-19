@@ -2,7 +2,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containeroo/garage-webui/internal/garage/admin"
+	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/containeroo/garage-webui/internal/utils"
 )
 
@@ -22,14 +22,6 @@ const (
 	cookieName      = "garage_webui_session"
 	sessionLifetime = 8 * time.Hour
 )
-
-// Store persists encrypted, revocable credential sessions.
-type Store interface {
-	SaveSession(context.Context, []byte, []byte, time.Time) error
-	LoadSession(context.Context, []byte) (credential []byte, theme string, err error)
-	DeleteSession(context.Context, []byte) error
-	SetSessionTheme(context.Context, []byte, string) error
-}
 
 // Credential is encrypted at rest and is never included in session responses.
 type Credential struct {
@@ -54,7 +46,7 @@ func (id Identity) Allows(operation string) bool {
 
 // Service owns only deployment endpoints and session encryption, never a shared Garage credential.
 type Service struct {
-	store      Store
+	store      storage.Sessions
 	encryption cipher.AEAD
 	GarageURL  string
 	S3URL      string
@@ -75,7 +67,7 @@ type Config struct {
 }
 
 // New validates deployment configuration and prepares session encryption.
-func New(store Store, cfg Config) (*Service, error) {
+func New(store storage.Sessions, cfg Config) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("session storage is required")
 	}

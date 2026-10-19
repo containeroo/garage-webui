@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,12 +18,21 @@ import (
 	"github.com/containeroo/garage-webui/internal/assembly"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/postgres"
+	"github.com/containeroo/garage-webui/internal/sqlite"
+	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/containeroo/garage-webui/web"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSQLiteGarageCredentialFlow(t *testing.T) {
+	store, err := sqlite.Open(context.Background(), "sqlite:"+filepath.Join(t.TempDir(), "console.db"), slog.Default())
+	require.NoError(t, err)
+	defer store.Close()
+	testGarageCredentialFlow(t, store)
+}
 
 func TestGarageCredentialFlow(t *testing.T) {
 	dsn := os.Getenv("GARAGE_WEBUI_TEST_DATABASE_URL")
@@ -45,6 +55,11 @@ func TestGarageCredentialFlow(t *testing.T) {
 	defer db.Close()
 	store := postgres.New(db)
 	require.NoError(t, store.Migrate(ctx, slog.Default()))
+	testGarageCredentialFlow(t, store)
+}
+
+func testGarageCredentialFlow(t *testing.T, store storage.Store) {
+	t.Helper()
 	revoked := false
 	scope := []string{"ListBuckets", "ListAdminTokens", "CreateAdminToken", "UpdateAdminToken", "DeleteAdminToken"}
 	calls := []string{}

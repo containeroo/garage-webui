@@ -2,7 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/containeroo/garage-webui/internal/storage"
+	"github.com/jackc/pgx/v5"
 )
 
 // SaveSession persists encrypted credentials under a hashed random session token.
@@ -14,6 +18,9 @@ func (s *Store) SaveSession(ctx context.Context, hash, credential []byte, expire
 // LoadSession loads only an unexpired session.
 func (s *Store) LoadSession(ctx context.Context, hash []byte) (credential []byte, theme string, err error) {
 	err = s.db.QueryRow(ctx, `SELECT credential,theme FROM webui_sessions WHERE token_hash=$1 AND expires_at>now()`, hash).Scan(&credential, &theme)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = storage.ErrSessionNotFound
+	}
 	return
 }
 

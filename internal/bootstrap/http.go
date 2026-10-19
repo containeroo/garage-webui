@@ -1,0 +1,75 @@
+package bootstrap
+
+import (
+	"io/fs"
+	"log/slog"
+	"net/http"
+
+	"github.com/containeroo/garage-webui/internal/assembly"
+	"github.com/containeroo/garage-webui/internal/flags"
+	"github.com/containeroo/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/server"
+	"github.com/containeroo/garage-webui/internal/s3"
+	"github.com/containeroo/garage-webui/internal/storage"
+	"github.com/containeroo/garage-webui/themes"
+)
+
+// newServer wires authentication, object services and HTTP handlers.
+// The caller retains ownership of the database on both success and failure.
+func newServer(
+	cfg flags.Config,
+	logger *slog.Logger,
+	db storage.Store,
+	assets fs.FS,
+	availableThemes []themes.Theme,
+) (*server.Server, error) {
+	authentication, err := auth.New(db, auth.Config{
+		PublicURL:     cfg.Server.PublicURL,
+		RoutePrefix:   cfg.Server.RoutePrefix,
+		GarageURL:     cfg.GarageURL,
+		S3URL:         cfg.S3PublicURL,
+		Region:        cfg.S3Region,
+		SessionSecret: cfg.SessionSecret,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.S3PublicURL != "" {
+		if _, err := s3.New(cfg.S3PublicURL, cfg.S3Region, "validation", "validation", cfg.Server.PublicURL); err != nil {
+			return nil, err
+		}
+	}
+
+	return server.New(
+		authentication,
+		assembly.New(authentication, db, cfg.Server.PublicURL),
+		db,
+		cfg.S3PublicURL,
+		cfg.Server.PublicURL,
+		cfg.Server.RoutePrefix,
+		logger,
+		cfg.Logging.AccessLog,
+		assets, availableThemes,
+	), nil
+}
+
+// Handler returns the application handler.
+func (a *Application) Handler() http.Handler { return a.server.Handler() }
+
+// Management returns health endpoints.
+func (a *Application) Management() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.db.Ping(r.Context()); err != nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	return mux
+}

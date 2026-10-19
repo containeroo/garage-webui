@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/containeroo/garage-webui/internal/storage"
 )
 
 // sessionHash derives the database key from the opaque browser cookie.
@@ -37,7 +37,7 @@ func (s *Service) Authenticate(r *http.Request) (Identity, error) {
 	}
 
 	encrypted, theme, err := s.store.LoadSession(r.Context(), hash)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, storage.ErrSessionNotFound) {
 		return Identity{}, ErrUnauthenticated
 	}
 

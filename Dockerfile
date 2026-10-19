@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Create writable runtime directories owned by the root group.
 # The setgid bit keeps new files/directories in group 0, which supports
 # OpenShift's arbitrary UID model while still running as a non-root user.
-RUN install -d -o 0 -g 0 -m 2775 /outfs/app /outfs/tmp
+RUN install -d -o 0 -g 0 -m 2775 /outfs/app /outfs/tmp /outfs/data
 
 
 # Use distroless as a minimal base image for the server binary.
@@ -62,6 +62,7 @@ FROM gcr.io/distroless/static:nonroot
 COPY --from=prep /workspace/garage-webui /garage-webui
 COPY --from=prep /outfs/app /app
 COPY --from=prep /outfs/tmp /tmp
+COPY --from=prep /outfs/data /data
 
 ENV HOME=/tmp
 

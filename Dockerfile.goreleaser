@@ -5,7 +5,7 @@ FROM --platform=$BUILDPLATFORM alpine:3.24 AS prep
 # Create writable runtime directories owned by the root group.
 # The setgid bit keeps new files/directories in group 0, which supports
 # OpenShift's arbitrary UID model while still running as a non-root user.
-RUN install -d -o 0 -g 0 -m 2775 /outfs/app /outfs/tmp
+RUN install -d -o 0 -g 0 -m 2775 /outfs/app /outfs/tmp /outfs/data
 
 # Use distroless as a minimal base image for the server binary.
 # Refer to https://github.com/GoogleContainerTools/distroless for more details.
@@ -16,6 +16,7 @@ ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/garage-webui /garage-webui
 COPY --from=prep /outfs/app /app
 COPY --from=prep /outfs/tmp /tmp
+COPY --from=prep /outfs/data /data
 
 ENV HOME=/tmp
 WORKDIR /app

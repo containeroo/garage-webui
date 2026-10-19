@@ -26,7 +26,7 @@ Open `http://localhost:8080` and sign in with the Garage admin token. Use `local
 
 This refactor requires a fresh Web UI database and the new `session-secret`. Previous Web UI account schemas and authentication flags are unsupported. Garage data is unaffected.
 
-The application requires PostgreSQL, a Garage Admin API URL, and a session encryption key. Set a public origin and, for browser object access, a browser-reachable S3 API endpoint. Keep the database credentials, session encryption key private. For replica coordination, use a direct PostgreSQL connection or session pooling, not transaction or statement pooling. See [Configuration](../configuration/index.md) for the available settings.
+The application requires PostgreSQL or SQLite, a Garage Admin API URL, and a session encryption key. Set a public origin and, for browser object access, a browser-reachable S3 API endpoint. Keep the database credentials, session encryption key private. For replica coordination, use a direct PostgreSQL connection or session pooling, not transaction or statement pooling. See [Configuration](../configuration/index.md) for the available settings.
 
 ## Docker Compose
 
@@ -67,3 +67,9 @@ kubectl port-forward service/garage 3900:3900
 Open `http://localhost:8080` and sign in with the Garage admin token. For remote access, expose the Web UI and Garage S3 services through your ingress or gateway, and update `GARAGE_WEBUI__PUBLIC_URL` and `GARAGE_WEBUI__S3_PUBLIC_URL` in `webui.yaml` to their browser-accessible HTTPS origins. Do not expose the Garage Admin API or PostgreSQL publicly. Pin the Web UI image to a release, size the claims for your workload, and configure backups. These single-node examples are starting points; they do not provide Garage or PostgreSQL high availability.
 
 For buckets used with multipart uploads or copies, configure an abort-incomplete-multipart-upload lifecycle rule supported by the Garage deployment. The browser attempts to abort failed transfers, but cannot guarantee cleanup after a lost connection or a closed tab. The Web UI reports when an attempted abort fails; an interrupted browser may be unable to report it.
+
+## SQLite deployment
+
+For a single Web UI instance, set `GARAGE_WEBUI__DATABASE_URL=sqlite:///data/garage-webui.db` and mount a persistent directory at `/data`, writable by UID 65532. Keep `GARAGE_WEBUI__SESSION_SECRET` stable. PostgreSQL and its credentials are unnecessary for this deployment. The supplied Compose and Kubernetes examples continue to use PostgreSQL by default.
+
+For Kubernetes, use one replica with the `Recreate` deployment strategy and a persistent volume for `/data`. A rolling update must not start another instance against the same SQLite file. See [SQLite configuration](../configuration/index.md#sqlite) for locking and backup requirements.

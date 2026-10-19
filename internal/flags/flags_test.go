@@ -19,3 +19,14 @@ func TestCredentialConfiguration(t *testing.T) {
 		assert.Error(t, err)
 	}
 }
+
+func TestSQLiteConfiguration(t *testing.T) {
+	t.Setenv("GARAGE_WEBUI__DATABASE_URL", "sqlite:///data/console.db")
+	t.Setenv("GARAGE_WEBUI__GARAGE_URL", "http://localhost:3903")
+	t.Setenv("GARAGE_WEBUI__SESSION_SECRET", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	cfg, err := Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Equal(t, "sqlite:///data/console.db", cfg.Database.URL)
+	assert.Zero(t, cfg.Database.MaxConns)
+	assert.Zero(t, cfg.Database.MinIdleConns)
+}

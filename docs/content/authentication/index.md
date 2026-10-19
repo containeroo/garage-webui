@@ -26,7 +26,7 @@ Configure `--s3-public-url` for S3 sign-in and object access. This endpoint must
 
 ## Sessions
 
-PostgreSQL stores encrypted credentials and session expiry. Generate a session encryption key:
+The configured database stores encrypted credentials and session expiry. Generate a session encryption key:
 
 ```sh
 openssl rand -base64 32
@@ -42,4 +42,4 @@ Sign-in attempts are limited per immediate network peer on each process. Use ing
 
 An admin token used for object operations needs `GetBucketInfo`, `GetKeyInfo`, `CreateKey`, `AllowBucketKey`, `DenyBucketKey`, and `UpdateBucket`. The Web UI checks these scopes before using managed signing keys. Bucket deletion also needs `DeleteBucket` and `DeleteKey` so the Web UI can revoke its managed keys. Direct S3 sign-in uses the key's own Garage permissions instead.
 
-Login rate limits are enforced in PostgreSQL across Web UI replicas, using a hash of the connecting network peer. The Web UI does not trust unconfigured forwarded-IP headers. Behind a reverse proxy, enable appropriate ingress rate limiting so clients sharing its source address do not share the application's allowance.
+Login rate limits are persisted in the configured database (shared across replicas with PostgreSQL), using a hash of the connecting network peer. The Web UI does not trust unconfigured forwarded-IP headers. Behind a reverse proxy, enable appropriate ingress rate limiting so clients sharing its source address do not share the application's allowance.

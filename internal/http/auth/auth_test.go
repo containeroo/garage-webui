@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func (s *testStore) SaveSession(_ context.Context, h, c []byte, e time.Time) err
 func (s *testStore) LoadSession(_ context.Context, h []byte) ([]byte, string, error) {
 	v, ok := s.records[string(h)]
 	if !ok || v.expires.Before(time.Now()) {
-		return nil, "", pgx.ErrNoRows
+		return nil, "", storage.ErrSessionNotFound
 	}
 	return v.credential, v.theme, nil
 }

@@ -113,9 +113,12 @@ func TestMigrationsIntegration(t *testing.T) {
 	}
 
 	require.NoError(t, store.Migrate(ctx, logger))
+	migrations, err := loadMigrations(migrationFiles)
+	require.NoError(t, err)
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM webui_schema_migrations").Scan(&count))
-	assert.Equal(t, 2, count)
+	assert.Equal(t, len(migrations), count)
+	appliedBeforeFailure := count
 
 	files := fstest.MapFS{
 		"migrations/001_initial.sql": {Data: []byte("SELECT 1")},
@@ -127,5 +130,5 @@ func TestMigrationsIntegration(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, "SELECT to_regclass('migration_rollback_test') IS NOT NULL").Scan(&tableExists))
 	assert.False(t, tableExists)
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM webui_schema_migrations").Scan(&count))
-	assert.Equal(t, 1, count)
+	assert.Equal(t, appliedBeforeFailure, count)
 }

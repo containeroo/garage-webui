@@ -3,6 +3,7 @@ package flags
 
 import (
 	appkitconfig "github.com/containeroo/appkit/config"
+	"github.com/containeroo/garage-webui/internal/database"
 	"github.com/containeroo/tinyflags"
 )
 
@@ -10,8 +11,8 @@ import (
 type Config struct {
 	// Server configures HTTP listeners.
 	Server appkitconfig.Server
-	// Database configures PostgreSQL.
-	Database appkitconfig.Postgres
+	// Database selects SQLite or PostgreSQL.
+	Database database.Config
 	// Logging configures process logs.
 	Logging appkitconfig.Logging
 	// GarageURL is the Garage Admin API base URL.
@@ -31,7 +32,7 @@ func Parse(args []string, version string) (Config, error) {
 	var cfg Config
 	tf := appkitconfig.NewFlagSet("garage-webui", "GARAGE_WEBUI", version)
 
-	appkitconfig.RegisterPostgres(tf, &cfg.Database, appkitconfig.PostgresOptions{})
+	registerDatabase(tf, &cfg.Database)
 	finalizeServer := appkitconfig.RegisterServer(tf, &cfg.Server, appkitconfig.ServerOptions{})
 
 	finalizeLogging := appkitconfig.RegisterLogging(tf, &cfg.Logging)
@@ -69,4 +70,14 @@ func registerS3(tf *tinyflags.FlagSet, cfg *Config) {
 		Value()
 	tf.StringVar(&cfg.S3Region, "s3-region", "garage", "Garage S3 region for signed upload URLs.").
 		Value()
+}
+
+// registerDatabase exposes the database URL and PostgreSQL-only pool options.
+func registerDatabase(tf *tinyflags.FlagSet, cfg *database.Config) {
+	tf.StringVar(&cfg.URL, "database-url", "", "PostgreSQL URL or SQLite file URL (sqlite:///absolute/path or sqlite:relative/path)").
+		Section(appkitconfig.SectionDatabase).Placeholder("URL").Required().OverriddenValueMaskFn(tinyflags.MaskPostgresURL).Value()
+	tf.Int32Var(&cfg.MaxConns, "database-max-conns", 0, "Maximum PostgreSQL connections; 0 uses driver defaults").
+		Section(appkitconfig.SectionDatabase).Validate(tinyflags.NonNegative[int32]()).Value()
+	tf.Int32Var(&cfg.MinIdleConns, "database-min-idle-conns", 0, "Minimum idle PostgreSQL connections; 0 uses driver defaults").
+		Section(appkitconfig.SectionDatabase).Validate(tinyflags.NonNegative[int32]()).Value()
 }

@@ -26,3 +26,5 @@ make screenshots
 ```
 
 This target starts the same isolated stack and captures the real UI with Playwright. Screenshots are written to `docs/content/assets/screenshots` and referenced by the README and documentation.
+
+SQLite storage tests run without external services. Run the complete browser suite against SQLite with `E2E_DATABASE=sqlite make test-e2e`; this starts Garage without a PostgreSQL container and removes the disposable SQLite database on completion. CI runs the browser suite against both databases.

@@ -4,6 +4,8 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/garage-webui-e2e.XXXXXXXX")
 project="garage-webui-e2e-$(basename "$temp_dir" | tr '[:upper:].' '[:lower:]-')"
 app_pid=''
+database=${E2E_DATABASE:-postgres}
+case "$database" in postgres|sqlite) ;; *) printf 'Unknown E2E_DATABASE: %s\n' "$database" >&2; exit 1 ;; esac
 compose() { docker compose --project-name "$project" --file "$root/dev/compose/compose.e2e.yaml" "$@"; }
 cleanup() {
   status=$?
@@ -37,13 +39,18 @@ NODE
   app_port=$1 management_port=$2
 }
 start_app() {
-  compose up -d --wait garage postgres
+  if [ "$database" = postgres ]; then
+    compose up -d --wait garage postgres
+    database_port=$(compose port postgres 5432)
+    export GARAGE_WEBUI__DATABASE_URL="postgres://garage_webui:local-database-password@127.0.0.1:${database_port##*:}/garage_webui?sslmode=disable"
+  else
+    compose up -d --wait garage
+    export GARAGE_WEBUI__DATABASE_URL="sqlite:$temp_dir/garage-webui.db"
+  fi
   compose run --rm --no-deps garage-ready
   garage_port=$(compose port garage 3903)
   s3_port=$(compose port garage 3900)
-  database_port=$(compose port postgres 5432)
   export E2E_GARAGE_URL="http://127.0.0.1:${garage_port##*:}" E2E_ADMIN_TOKEN=local-garage-admin-token
-  export GARAGE_WEBUI__DATABASE_URL="postgres://garage_webui:local-database-password@127.0.0.1:${database_port##*:}/garage_webui?sslmode=disable"
   export GARAGE_WEBUI__GARAGE_URL="$E2E_GARAGE_URL" GARAGE_WEBUI__SESSION_SECRET=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   export GARAGE_WEBUI__PUBLIC_URL="http://127.0.0.1:$app_port" GARAGE_WEBUI__S3_PUBLIC_URL="http://127.0.0.1:${s3_port##*:}"
   export GARAGE_WEBUI__ROUTE_PREFIX=/e2e E2E_BASE_URL="http://127.0.0.1:$app_port/e2e/"
