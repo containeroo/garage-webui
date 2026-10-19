@@ -30,7 +30,7 @@ jobs:
       GARAGE_WEBUI_TEST_DATABASE_URL: postgres://garage_webui:test-password@localhost:5432/garage_webui_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
