@@ -35,7 +35,10 @@ $(FAVICON_GENERATE): | $(DEV_TOOLS_BIN)
 
 ##@ Documentation
 
-.PHONY: site site-serve kumbuka dev-tools
+.PHONY: site site-serve screenshots kumbuka dev-tools
+screenshots: ## Capture documentation screenshots using a disposable local stack.
+	sh dev/capture-screenshots.sh
+
 site: kumbuka ## Build the documentation site.
 	$(KUMBUKA_CLI) build --config "$(SITE_CONFIG)"
 

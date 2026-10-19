@@ -75,6 +75,10 @@ E2E_BASE_URL=http://localhost:8080/e2e/ E2E_OIDC_URL=http://127.0.0.1:18086/oidc
 
 Stop the application before removing the dedicated test database. Do not point these tests at a shared database.
 
+## Documentation screenshots
+
+Run `make screenshots` to rebuild the screenshots used by the README and documentation. It starts a disposable Garage and PostgreSQL stack, captures the interface with Playwright, and removes the stack and its data afterward. Docker, Go, Node.js 24 or newer, and `curl` are required. Set `E2E_CHROMIUM_PATH` to use an existing Chromium executable.
+
 ## Documentation site
 
 The site uses the pinned [Kumbuka CLI](https://github.com/kumbuka-me/cli). Build it with:

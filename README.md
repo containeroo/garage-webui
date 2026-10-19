@@ -2,6 +2,8 @@
 
 Web interface for managing [Garage](https://garagehq.deuxfleurs.fr/) buckets, access keys, users, and objects.
 
+![Garage Web UI overview showing cluster health and bucket storage](docs/content/assets/screenshots/overview.png)
+
 ## Quick Start
 
 Run locally (Docker Compose, Go, and npm required):

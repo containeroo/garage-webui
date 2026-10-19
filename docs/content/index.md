@@ -2,6 +2,20 @@
 
 Garage Web UI is a web interface for managing [Garage](https://garagehq.deuxfleurs.fr/) buckets, access keys, users, and objects.
 
+## Screenshots
+
+The overview brings cluster health and storage usage together.
+
+![Overview showing cluster health and storage by bucket](assets/screenshots/overview.png)
+
+Manage buckets and their permissions from the bucket list.
+
+![Bucket list with overview, permissions, and management actions](assets/screenshots/buckets.png)
+
+Inspect nodes and cluster layout settings on the cluster page.
+
+![Cluster page showing node and partition health](assets/screenshots/cluster.png)
+
 ## Quick start
 
 With Docker Compose, Go, and npm installed, run the local development stack from the repository root:
