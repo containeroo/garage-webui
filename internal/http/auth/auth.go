@@ -75,7 +75,7 @@ func New(ctx context.Context, store repository, cfg Config) (*Service, error) {
 	}
 
 	s := &Service{
-		Service:    authentication.New(store, *cfg.Authentication.ModeOverride, cfg.Authentication.LocalLogin),
+		Service:    authentication.New(store, *cfg.Authentication.ModeOverride, cfg.Authentication.LocalLogin, cfg.Authentication.AllowRegistrationOverride),
 		sessions:   store,
 		mode:       *cfg.Authentication.ModeOverride,
 		secure:     strings.HasPrefix(cfg.PublicURL, "https://"),

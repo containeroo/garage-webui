@@ -11,6 +11,16 @@ import (
 
 // LinkIdentity associates an external identity with an existing local account.
 func (s *Store) LinkIdentity(ctx context.Context, username string, id Identity) error {
+	return s.linkIdentity(ctx, username, id, false)
+}
+
+// LinkPendingIdentity links an identity only if it is awaiting review.
+func (s *Store) LinkPendingIdentity(ctx context.Context, username string, id Identity) error {
+	return s.linkIdentity(ctx, username, id, true)
+}
+
+// linkIdentity atomically validates and binds the identity.
+func (s *Store) linkIdentity(ctx context.Context, username string, id Identity, pending bool) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -22,6 +32,15 @@ func (s *Store) LinkIdentity(ctx context.Context, username string, id Identity) 
     pg_advisory_xact_lock(748403197613)
 `); err != nil {
 		return err
+	}
+	if pending {
+		var exists bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM webui_pending_identities WHERE issuer = $1 AND subject = $2 AND status = 'pending')`, id.Issuer, id.Subject).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrUserNotFound
+		}
 	}
 
 	result, err := tx.Exec(ctx, `
@@ -449,7 +468,7 @@ func (s *Store) RelinkProxyIdentity(ctx context.Context, username, oldSubject, n
 }
 
 // resolveExternal resolves a verified identity without implicitly linking existing accounts.
-func (s *Store) ResolveExternal(ctx context.Context, provider, issuer, subject, username string) (string, error) {
+func (s *Store) ResolveExternal(ctx context.Context, provider, issuer, subject, username string, registrationOverride *bool) (string, error) {
 	id := Identity{
 		Provider: provider,
 		Issuer:   issuer,
@@ -497,7 +516,7 @@ func (s *Store) ResolveExternal(ctx context.Context, provider, issuer, subject, 
 	var allowed, retired, pending bool
 	if err = tx.QueryRow(ctx, `
   SELECT
-    allow_registration,
+    COALESCE($4::boolean, allow_registration),
     EXISTS (
       SELECT
         1
@@ -522,7 +541,7 @@ func (s *Store) ResolveExternal(ctx context.Context, provider, issuer, subject, 
     webui_auth_settings
   WHERE
     singleton
-`, provider, issuer, subject).Scan(&allowed, &retired, &pending); err != nil {
+`, provider, issuer, subject, registrationOverride).Scan(&allowed, &retired, &pending); err != nil {
 		return "", err
 	}
 

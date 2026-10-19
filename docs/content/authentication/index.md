@@ -60,6 +60,10 @@ The group claim defaults to `groups`; change it with `--oidc-group-claim`. A str
 
 External identities are linked to local accounts. When external registration is allowed, a new identity can create a viewer account; an existing username is not automatically taken over. An unlinked OIDC identity can be placed in the pending list for administrator review, including when registration is disabled or the suggested username conflicts. Administrators can manage accounts, identity links, groups, roles, and the registration policy in the Web UI. Disabled accounts cannot authenticate.
 
+To link an OIDC identity to an existing account, have the user attempt to sign in, then choose the account from the pending identities list and select **Link**. The identity is verified by the configured provider before it appears in the list.
+
+Setting `--allow-user-registration` or `GARAGE_WEBUI__ALLOW_USER_REGISTRATION` makes registration deployment-managed. Its value takes precedence over the saved policy and cannot be changed in the Web UI or API; removing the override restores the saved policy.
+
 ## Recovery and sessions
 
 With proxy or OIDC mode, enable `--local-login` to allow a local credential to sign in at `/login` beneath the route prefix. The account must already have a password and an enabled local credential. Plan and test recovery access before relying on an external provider; enabling the flag alone does not create an account.

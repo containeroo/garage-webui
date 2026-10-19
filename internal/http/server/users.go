@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	kit "github.com/containeroo/appkit/auth"
+	"github.com/gi8lino/garage-webui/internal/application/authentication"
 	"github.com/gi8lino/garage-webui/internal/http/auth"
 	"github.com/gi8lino/garage-webui/internal/http/middleware"
 	httpresponse "github.com/gi8lino/garage-webui/internal/http/response"
@@ -204,7 +205,7 @@ func (s *Server) revokeUserSessions(w http.ResponseWriter, r *http.Request) {
 	s.userResult(w, s.auth.RevokeAccountSessions(r.Context(), r.PathValue("username")))
 }
 
-// linkIdentity binds a provider identity to an account.
+// linkIdentity binds a trusted-proxy identity to an account.
 func (s *Server) linkIdentity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.administrator(w, r); !ok {
 		return
@@ -216,6 +217,21 @@ func (s *Server) linkIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.userResult(w, s.auth.LinkIdentity(r.Context(), r.PathValue("username"), id))
+}
+
+// linkPendingIdentity binds a verified pending OIDC identity to an account.
+func (s *Server) linkPendingIdentity(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.administrator(w, r); !ok {
+		return
+	}
+	var input struct {
+		Username string        `json:"username"`
+		Identity auth.Identity `json:"identity"`
+	}
+	if !decodeUserRequest(w, r, &input) {
+		return
+	}
+	s.userResult(w, s.auth.LinkPendingIdentity(r.Context(), input.Username, input.Identity))
 }
 
 // unlinkIdentity retires a provider identity binding.
@@ -273,7 +289,7 @@ func (s *Server) getRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
+	writeJSON(w, http.StatusOK, map[string]bool{"enabled": enabled, "managed": s.auth.RegistrationManaged()})
 }
 
 // setRegistration updates external registration policy.
@@ -294,7 +310,12 @@ func (s *Server) setRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.userResult(w, s.auth.SetRegistration(r.Context(), *input.Enabled))
+	err := s.auth.SetRegistration(r.Context(), *input.Enabled)
+	if errors.Is(err, authentication.ErrRegistrationManaged) {
+		httpresponse.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	s.userResult(w, err)
 }
 
 // listPendingIdentities lists OIDC identities waiting for an account link.

@@ -416,7 +416,9 @@ test("loads and saves the account theme", async () => {
   );
   render(<App />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "My profile: alice" }));
+  await user.click(
+    await screen.findByRole("button", { name: "My profile: alice" }),
+  );
   const select = await screen.findByLabelText("Theme");
   await vi.waitFor(() =>
     expect((select as HTMLSelectElement).value).toBe("Dark"),
@@ -438,6 +440,36 @@ test("loads and saves the account theme", async () => {
     ).toBeTruthy(),
   );
 });
+
+test.each([
+  { managed: true, enabled: true },
+  { managed: true, enabled: false },
+  { managed: false, enabled: true },
+])(
+  "registration policy reflects deployment control",
+  async ({ managed, enabled }) => {
+    const request = vi.fn(async (path: string) =>
+      path === "api/registration" ? { enabled, managed } : [],
+    );
+    render(
+      <QuestionProvider>
+        <UserManagement
+          request={request as never}
+          currentUser="admin"
+          mode="oidc"
+          localLogin={false}
+          oidcIssuer="https://identity.example"
+        />
+      </QuestionProvider>,
+    );
+    const toggle = (await screen.findByRole("checkbox", {
+      name: "Enabled",
+    })) as HTMLInputElement;
+    await vi.waitFor(() => expect(toggle.checked).toBe(enabled));
+    expect(toggle.disabled).toBe(managed);
+    expect(screen.queryByText(/Managed by deployment/) !== null).toBe(managed);
+  },
+);
 
 test.each([
   { mode: "oidc", localLogin: false },
@@ -497,6 +529,10 @@ test.each([
       mode === "proxy",
     );
     expect(within(dialog).queryByLabelText("Provider")).toBeNull();
+    expect(within(dialog).queryByLabelText("OIDC subject")).toBeNull();
+    expect(within(dialog).queryByLabelText("Proxy username") !== null).toBe(
+      mode === "proxy",
+    );
     expect(within(dialog).queryByLabelText("Set local password") !== null).toBe(
       localLogin,
     );

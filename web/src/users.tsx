@@ -41,6 +41,7 @@ export function UserManagement({
   const { confirm, prompt } = useQuestions();
   const [users, setUsers] = useState<Account[]>([]);
   const [registration, setRegistration] = useState(false);
+  const [registrationManaged, setRegistrationManaged] = useState(false);
   const [pending, setPending] = useState<PendingIdentity[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
   const [mappings, setMappings] = useState<GroupMapping[]>([]);
@@ -63,13 +64,14 @@ export function UserManagement({
     const [accounts, policy, waiting, groupList, groupMappings] =
       await Promise.all([
         request<Account[]>("api/users"),
-        request<{ enabled: boolean }>("api/registration"),
+        request<{ enabled: boolean; managed: boolean }>("api/registration"),
         request<PendingIdentity[]>("api/pending-identities"),
         request<string[]>("api/groups"),
         request<GroupMapping[]>("api/group-mappings"),
       ]);
     setUsers(accounts);
     setRegistration(policy.enabled);
+    setRegistrationManaged(policy.managed);
     setPending(waiting);
     setGroups(groupList);
     setMappings(groupMappings);
@@ -124,6 +126,7 @@ export function UserManagement({
               <input
                 type="checkbox"
                 checked={registration}
+                disabled={registrationManaged}
                 onChange={(event) =>
                   void change("api/registration", "PUT", {
                     enabled: event.target.checked,
@@ -134,6 +137,12 @@ export function UserManagement({
             </label>
           </div>
           <p className="user-note">
+            {registrationManaged && (
+              <>
+                Managed by deployment: <code>--allow-user-registration</code> /{" "}
+                <code>GARAGE_WEBUI__ALLOW_USER_REGISTRATION</code>.{" "}
+              </>
+            )}
             The configured administrator group grants elevated access. Existing
             names are never linked automatically.
           </p>
@@ -212,11 +221,10 @@ export function UserManagement({
                           className="secondary"
                           disabled={!target}
                           onClick={() =>
-                            void change(
-                              `${accountPath(target)}/identities`,
-                              "POST",
-                              binding,
-                            )
+                            void change("api/pending-identities/link", "POST", {
+                              username: target,
+                              identity: binding,
+                            })
                           }
                         >
                           Link
@@ -661,36 +669,40 @@ export function UserManagement({
                             </button>
                           </div>
                         ))}
-                      <form
-                        className="user-form"
-                        onSubmit={async (event) => {
-                          event.preventDefault();
-                          if (
-                            await change(
-                              `${accountPath(selected.username)}/identities`,
-                              "POST",
-                              {
-                                provider: mode,
-                                issuer: mode === "oidc" ? oidcIssuer : "",
-                                subject,
-                              },
+                      {mode === "proxy" && (
+                        <form
+                          className="user-form"
+                          onSubmit={async (event) => {
+                            event.preventDefault();
+                            if (
+                              await change(
+                                `${accountPath(selected.username)}/identities`,
+                                "POST",
+                                {
+                                  provider: "proxy",
+                                  issuer: "",
+                                  subject,
+                                },
+                              )
                             )
-                          )
-                            setSubject("");
-                        }}
-                      >
-                        <label>
-                          {mode === "oidc" ? "OIDC subject" : "Proxy username"}
-                          <input
-                            required
-                            value={subject}
-                            onChange={(event) => setSubject(event.target.value)}
-                          />
-                        </label>
-                        <button className="secondary">
-                          <Plus size={15} /> Link identity
-                        </button>
-                      </form>
+                              setSubject("");
+                          }}
+                        >
+                          <label>
+                            Proxy username
+                            <input
+                              required
+                              value={subject}
+                              onChange={(event) =>
+                                setSubject(event.target.value)
+                              }
+                            />
+                          </label>
+                          <button className="secondary">
+                            <Plus size={15} /> Link identity
+                          </button>
+                        </form>
+                      )}
                     </>
                   )}
                 </div>

@@ -19,11 +19,20 @@ func (s *Service) Role(ctx context.Context, username string) (string, error) {
 
 // Registration reports whether external registration is enabled.
 func (s *Service) Registration(ctx context.Context) (bool, error) {
+	if s.registrationOverride != nil {
+		return *s.registrationOverride, nil
+	}
 	return s.accounts.Registration(ctx)
 }
 
+// RegistrationManaged reports whether deployment configuration controls registration.
+func (s *Service) RegistrationManaged() bool { return s.registrationOverride != nil }
+
 // SetRegistration changes the external registration policy.
 func (s *Service) SetRegistration(ctx context.Context, enabled bool) error {
+	if s.RegistrationManaged() {
+		return ErrRegistrationManaged
+	}
 	return s.accounts.SetRegistration(ctx, enabled)
 }
 
@@ -83,11 +92,19 @@ func (s *Service) DeleteAccount(ctx context.Context, actor, username string) err
 
 // LinkIdentity associates an external identity with an existing account.
 func (s *Service) LinkIdentity(ctx context.Context, username string, id Identity) error {
-	if !validUsername(username) || !validIdentity(id) {
+	if !validUsername(username) || id.Provider != "proxy" || !validIdentity(id) {
 		return ErrInvalidUser
 	}
 
 	return s.accounts.LinkIdentity(ctx, username, id)
+}
+
+// LinkPendingIdentity links a verified pending OIDC identity to an account.
+func (s *Service) LinkPendingIdentity(ctx context.Context, username string, id Identity) error {
+	if !validUsername(username) || !validOIDCIdentity(id) {
+		return ErrInvalidUser
+	}
+	return s.accounts.LinkPendingIdentity(ctx, username, id)
 }
 
 // RejectPendingIdentity retires an unlinked OIDC identity.
@@ -157,7 +174,7 @@ func (s *Service) ResolveExternal(ctx context.Context, provider, issuer, subject
 		return "", kit.ErrUnauthenticated
 	}
 
-	return s.accounts.ResolveExternal(ctx, provider, issuer, subject, username)
+	return s.accounts.ResolveExternal(ctx, provider, issuer, subject, username, s.registrationOverride)
 }
 
 // UpdateOwnProfile changes a user's profile fields.

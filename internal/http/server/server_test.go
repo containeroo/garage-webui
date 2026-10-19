@@ -24,6 +24,7 @@ import (
 
 	kit "github.com/containeroo/appkit/auth"
 	appkithttpserver "github.com/containeroo/appkit/httpserver"
+	applicationauth "github.com/gi8lino/garage-webui/internal/application/authentication"
 	applicationgarage "github.com/gi8lino/garage-webui/internal/application/garage"
 	"github.com/gi8lino/garage-webui/internal/application/objects"
 	"github.com/gi8lino/garage-webui/internal/flags"
@@ -402,6 +403,9 @@ func TestLocalFlow(t *testing.T) {
 		assert.Equal(t, http.StatusConflict, call("PUT", "/api/users/admin", `{"enabled":false,"password":""}`, true).Code)
 		assert.Equal(t, http.StatusConflict, call("DELETE", "/api/users/admin", `{}`, true).Code)
 		identity := `{"provider":"proxy","issuer":"","subject":"external-alice"}`
+		unverifiedOIDC := `{"provider":"oidc","issuer":"https://identity.example","subject":"unverified"}`
+		assert.Equal(t, http.StatusBadRequest, call("POST", "/api/users/alice/identities", unverifiedOIDC, true).Code)
+		assert.Equal(t, http.StatusNotFound, call("POST", "/api/pending-identities/link", `{"username":"alice","identity":`+unverifiedOIDC+`}`, true).Code)
 		assert.Equal(t, http.StatusNoContent, call("POST", "/api/users/alice/identities", identity, true).Code)
 		assert.Equal(t, http.StatusConflict, call("POST", "/api/users/alice/identities", identity, true).Code)
 		proxyRequest.Header.Set("X-Forwarded-Groups", "garage-admins")
@@ -442,6 +446,45 @@ func TestLocalFlow(t *testing.T) {
 		proxyRequest.Header.Set("X-Forwarded-User", "admin")
 		_, err = proxyAuth.User(proxyRequest)
 		assert.Error(t, err, "an external identity must never implicitly bind an existing account")
+	})
+
+	t.Run("deployment registration override", func(t *testing.T) {
+		store := postgres.New(db)
+		for _, override := range []bool{false, true} {
+			require.NoError(t, store.SetRegistration(ctx, !override))
+			managedCfg := cfg
+			managedCfg.Authentication.ModeOverride = &mode
+			managedCfg.Authentication.AllowRegistrationOverride = &override
+			managed, err := auth.New(ctx, store, testAuthConfig(managedCfg))
+			require.NoError(t, err)
+			enabled, err := managed.Registration(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, override, enabled)
+			assert.ErrorIs(t, managed.SetRegistration(ctx, !override), applicationauth.ErrRegistrationManaged)
+			managedHandler := New(applicationgarage.New(client), managed, nil, "", cfg.Server.PublicURL, "", nil, false, web.Assets, testThemes).Handler()
+			get := httptest.NewRequest("GET", "/api/registration", nil)
+			get.AddCookie(cookie)
+			response := httptest.NewRecorder()
+			managedHandler.ServeHTTP(response, get)
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.JSONEq(t, fmt.Sprintf(`{"enabled":%t,"managed":true}`, override), response.Body.String())
+			put := httptest.NewRequest("PUT", "/api/registration", strings.NewReader(fmt.Sprintf(`{"enabled":%t}`, !override)))
+			put.AddCookie(cookie)
+			put.Header.Set("Origin", cfg.Server.PublicURL)
+			put.Header.Set("Content-Type", "application/json")
+			response = httptest.NewRecorder()
+			managedHandler.ServeHTTP(response, put)
+			assert.Equal(t, http.StatusConflict, response.Code)
+			persisted, err := store.Registration(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, !override, persisted)
+			_, err = managed.ResolveExternal(ctx, "proxy", "", fmt.Sprintf("override-%t", override), fmt.Sprintf("override-%t", override))
+			if override {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		}
 	})
 
 	t.Run("oidc", func(t *testing.T) { testOIDC(t, ctx, db, cfg) })
@@ -513,8 +556,17 @@ func testOIDC(t *testing.T, ctx context.Context, db *pgxpool.Pool, cfg flags.Con
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	assert.Equal(t, "rejected", pending[0].Status)
+	assert.Error(t, service.LinkPendingIdentity(ctx, "oidc-account", pending[0].Identity), "rejected identities cannot be linked")
 	require.NoError(t, service.ReopenPendingIdentity(ctx, pending[0].Identity))
-	require.NoError(t, service.LinkIdentity(ctx, "oidc-account", pending[0].Identity))
+	body, err := json.Marshal(map[string]any{"username": "oidc-account", "identity": pending[0].Identity})
+	require.NoError(t, err)
+	linkRequest := httptest.NewRequest("POST", "/api/pending-identities/link", bytes.NewReader(body))
+	linkRequest.Header.Set("Origin", cfg.Server.PublicURL)
+	linkRequest.Header.Set("Content-Type", "application/json")
+	linkRequest.AddCookie(recovery.Result().Cookies()[0])
+	linkResponse := httptest.NewRecorder()
+	New(nil, service, nil, "", cfg.Server.PublicURL, "", nil, false, web.Assets, testThemes).Handler().ServeHTTP(linkResponse, linkRequest)
+	assert.Equal(t, http.StatusNoContent, linkResponse.Code)
 	pending, err = service.PendingIdentities(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, pending)

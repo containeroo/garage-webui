@@ -114,6 +114,7 @@ type accountRepository interface {
 	UpdateAccount(context.Context, string, string, bool, string) error
 	DeleteAccount(context.Context, string, string) error
 	LinkIdentity(context.Context, string, Identity) error
+	LinkPendingIdentity(context.Context, string, Identity) error
 	PendingIdentities(context.Context) ([]PendingIdentity, error)
 	RejectPendingIdentity(context.Context, Identity) error
 	ReopenPendingIdentity(context.Context, Identity) error
@@ -121,7 +122,7 @@ type accountRepository interface {
 	UnlinkIdentity(context.Context, string, Identity) error
 	RevokeAccountSessions(context.Context, string) error
 	RelinkProxyIdentity(context.Context, string, string, string) error
-	ResolveExternal(context.Context, string, string, string, string) (string, error)
+	ResolveExternal(context.Context, string, string, string, string, *bool) (string, error)
 	Profile(context.Context, string) (Profile, error)
 	UpdateOwnProfile(context.Context, string, string, string) error
 	UpdateOwnTheme(context.Context, string, string) error

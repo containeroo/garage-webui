@@ -280,6 +280,13 @@ func (s *Server) Handler() http.Handler {
 			policies.RequireAdmin,
 			policies.Mutation,
 		))
+	mux.Handle("POST /api/pending-identities/link",
+		httpkitmiddleware.Chain(
+			http.HandlerFunc(s.linkPendingIdentity),
+			policies.Authenticate,
+			policies.RequireAdmin,
+			policies.Mutation,
+		))
 	mux.Handle("POST /api/pending-identities/reopen",
 		httpkitmiddleware.Chain(
 			http.HandlerFunc(s.reopenPendingIdentity),
