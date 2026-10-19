@@ -15,7 +15,7 @@ services:
       - garage-data:/var/lib/garage/data
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: garage_webui
