@@ -14,6 +14,8 @@ import (
 
 // TestObjectOperations checks scope, pagination parameters and isolated credentials.
 func TestObjectOperations(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	store := &memoryKeyStore{}
 	manager := managerForTest(t, state, store)
@@ -52,11 +54,13 @@ func TestObjectOperations(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, del.Query().Get("X-Amz-Credential"), put.Query().Get("X-Amz-Credential"))
 	assert.Equal(t, 2, state.createCount)
-	assert.Equal(t, 1, len(state.cors["bucket-a"])) // shared GET/PUT/DELETE rule
+	assert.Len(t, state.cors["bucket-a"], 1) // shared GET/PUT/DELETE rule
 }
 
 // TestReadKeyReuseAcrossBuckets checks dedicated read-only keys and concurrency.
 func TestReadKeyReuseAcrossBuckets(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	store := &memoryKeyStore{}
 	manager := managerForTest(t, state, store)
@@ -89,6 +93,8 @@ func TestReadKeyReuseAcrossBuckets(t *testing.T) {
 
 // TestObjectURLValidation rejects oversized tokens and malformed target keys.
 func TestObjectURLValidation(t *testing.T) {
+	t.Parallel()
+
 	signer, err := New("http://localhost:3900", "garage", "key", "secret", "http://localhost:8080")
 	require.NoError(t, err)
 	_, err = signer.ListURL("bucket", strings.Repeat("x", 4097), time.Now())

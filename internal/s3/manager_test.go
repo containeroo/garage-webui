@@ -15,6 +15,8 @@ import (
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/garage/credentials"
 	"github.com/containeroo/garage-webui/internal/signing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // memoryKeyStore simulates a bucket lock held across provisioning operations.
@@ -248,14 +250,10 @@ func managerForTest(t *testing.T, state *fakeGarage, store *memoryKeyStore) *Man
 	adminServer := httptest.NewServer(state)
 	t.Cleanup(adminServer.Close)
 	client, err := admin.New(adminServer.URL, "admin-secret")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	manager, err := NewManager(credentials.New(client, store, "http://localhost:8080", credentials.NewCache(), "admin-secret"), "http://localhost:3900", "garage", "http://localhost:8080")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	return manager
 }
@@ -263,117 +261,160 @@ func managerForTest(t *testing.T, state *fakeGarage, store *memoryKeyStore) *Man
 // TestBucketScopedSigner verifies per-bucket keys, idempotent CORS updates, and
 // exact object- and bucket-scoped presigned URLs.
 func TestBucketScopedSigner(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	store := &memoryKeyStore{}
 	original := json.RawMessage(`{"ID":"existing-rule","AllowedOrigin":["https://other.example"],"AllowedMethod":["GET"],"AllowedHeader":["*"]}`)
 	state.cors["one"] = []json.RawMessage{original}
 	manager := managerForTest(t, state, store)
 	keys := map[string]string{}
-	for _, bucket := range []string{"one", "two", "one"} {
+	t.Run("first bucket", func(t *testing.T) {
+		bucket := "one"
 		address, err := manager.UploadURL(context.Background(), bucket, "alias-"+bucket, "folder/file.txt", time.Now())
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		u, err := url.Parse(address)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
-		if u.Path != "/alias-"+bucket+"/folder/file.txt" || u.Query().Get("X-Amz-Expires") != "300" {
-			t.Fatalf("unexpected upload URL %s", address)
-		}
+		assert.Equal(t, "/alias-"+bucket+"/folder/file.txt", u.Path)
+		assert.Equal(t, "300", u.Query().Get("X-Amz-Expires"))
 
-		if strings.Contains(address, "secret-") {
-			t.Fatal("secret leaked into signed URL")
-		}
+		assert.NotContains(t, address, "secret-", "secret leaked into signed URL")
 
 		credential := strings.Split(u.Query().Get("X-Amz-Credential"), "/")[0]
-		if previous, found := keys[bucket]; found && previous != credential {
-			t.Fatalf("key for bucket %q changed", bucket)
+		if previous, found := keys[bucket]; found {
+			assert.Equal(t, previous, credential, "repeated uploads must reuse the bucket key")
 		}
 
 		keys[bucket] = credential
-	}
+	})
 
-	if keys["one"] == keys["two"] || len(keys) != 2 || state.createCount != 2 {
-		t.Fatalf("expected separate reusable keys per bucket: keys=%v creates=%d", keys, state.createCount)
-	}
+	t.Run("second bucket", func(t *testing.T) {
+		bucket := "two"
+		address, err := manager.UploadURL(context.Background(), bucket, "alias-"+bucket, "folder/file.txt", time.Now())
+		require.NoError(t, err)
 
-	if state.allowCount != 2 || state.denyCount != 2 || state.updates["one"] != 1 || state.updates["two"] != 1 {
-		t.Fatalf("unexpected permission/CORS operations: allow=%d deny=%d updates=%v", state.allowCount, state.denyCount, state.updates)
-	}
+		u, err := url.Parse(address)
+		require.NoError(t, err)
 
-	if len(state.cors["one"]) != 2 || string(state.cors["one"][1]) != string(original) {
-		t.Fatalf("existing CORS rules were changed: %s", state.cors["one"])
-	}
+		assert.Equal(t, "/alias-"+bucket+"/folder/file.txt", u.Path)
+		assert.Equal(t, "300", u.Query().Get("X-Amz-Expires"))
+
+		assert.NotContains(t, address, "secret-", "secret leaked into signed URL")
+
+		credential := strings.Split(u.Query().Get("X-Amz-Credential"), "/")[0]
+		if previous, found := keys[bucket]; found {
+			assert.Equal(t, previous, credential, "repeated uploads must reuse the bucket key")
+		}
+
+		keys[bucket] = credential
+	})
+
+	t.Run("reuse first bucket", func(t *testing.T) {
+		bucket := "one"
+		address, err := manager.UploadURL(context.Background(), bucket, "alias-"+bucket, "folder/file.txt", time.Now())
+		require.NoError(t, err)
+
+		u, err := url.Parse(address)
+		require.NoError(t, err)
+
+		assert.Equal(t, "/alias-"+bucket+"/folder/file.txt", u.Path)
+		assert.Equal(t, "300", u.Query().Get("X-Amz-Expires"))
+
+		assert.NotContains(t, address, "secret-", "secret leaked into signed URL")
+
+		credential := strings.Split(u.Query().Get("X-Amz-Credential"), "/")[0]
+		if previous, found := keys[bucket]; found {
+			assert.Equal(t, previous, credential, "repeated uploads must reuse the bucket key")
+		}
+
+		keys[bucket] = credential
+	})
+
+	assert.NotEqual(t, keys["two"], keys["one"])
+	assert.Len(t, keys, 2)
+	assert.Equal(t, 2, state.createCount)
+
+	assert.Equal(t, 2, state.allowCount)
+	assert.Equal(t, 2, state.denyCount)
+	assert.Equal(t, 1, state.updates["one"])
+	assert.Equal(t, 1, state.updates["two"])
+
+	require.Len(t, state.cors["one"], 2)
+	assert.Equal(t, string(original), string(state.cors["one"][1]))
 
 	var rule struct {
 		AllowedOrigin []string
 		AllowedMethod []string
 		AllowedHeader []string
 	}
-	if err := json.Unmarshal(state.cors["one"][0], &rule); err != nil {
-		t.Fatal(err)
+	{
+		err := json.Unmarshal(state.cors["one"][0], &rule)
+		require.NoError(t, err)
 	}
 
-	if len(rule.AllowedOrigin) != 1 || rule.AllowedOrigin[0] != "http://localhost:8080" || len(rule.AllowedMethod) == 0 || len(rule.AllowedHeader) == 0 {
-		t.Fatalf("new rule does not allow upload: %+v", rule)
-	}
+	assert.Equal(t, []string{"http://localhost:8080"}, rule.AllowedOrigin)
+	assert.NotEmpty(t, rule.AllowedMethod)
+	assert.NotEmpty(t, rule.AllowedHeader)
 }
 
 // TestDeletedBucketSignerIsRecreated ensures stale key IDs are replaced only
 // for the affected bucket.
 func TestDeletedBucketSignerIsRecreated(t *testing.T) {
+	t.Parallel()
+
 	store := &memoryKeyStore{ids: map[string]string{"one": "GKdeleted"}}
 	state := newFakeGarage()
 	manager := managerForTest(t, state, store)
-	if _, err := manager.UploadURL(context.Background(), "one", "alias-one", "file.txt", time.Now()); err != nil {
-		t.Fatal(err)
+	{
+		_, err := manager.UploadURL(context.Background(), "one", "alias-one", "file.txt", time.Now())
+		require.NoError(t, err)
 	}
 
-	if store.ids["one"] == "GKdeleted" || state.createCount != 1 {
-		t.Fatalf("stale key was not replaced: %#v", store.ids)
-	}
+	assert.NotEqual(t, "GKdeleted", store.ids["one"], "stale key was not replaced: %#v", store.ids)
+	assert.Equal(t, 1, state.createCount)
 }
 
 // TestCORSConfigurationFailurePreventsSigning rejects an upload that could not
 // be enabled for this application's browser origin.
 func TestCORSConfigurationFailurePreventsSigning(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	state.failCORSWrite = true
 	store := &memoryKeyStore{}
 	manager := managerForTest(t, state, store)
-	if _, err := manager.UploadURL(context.Background(), "bucket", "alias", "file.txt", time.Now()); err == nil {
-		t.Fatal("expected CORS provisioning failure")
+	{
+		_, err := manager.UploadURL(context.Background(), "bucket", "alias", "file.txt", time.Now())
+		require.Error(t, err, "expected CORS provisioning failure")
 	}
 
-	if store.ids["bucket"] == "" {
-		t.Fatal("created key ID must be persisted for retry")
-	}
+	assert.NotEmpty(t, store.ids["bucket"], "created key ID must be persisted for retry")
 }
 
 // TestExistingCORSRule avoids updating CORS that already permits PUT requests.
 func TestExistingCORSRule(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	state.cors["bucket"] = []json.RawMessage{json.RawMessage(`{"AllowedOrigin":["http://localhost:8080"],"AllowedMethod":["PUT"],"AllowedHeader":["*"]}`)}
 	manager := managerForTest(t, state, &memoryKeyStore{})
-	if _, err := manager.UploadURL(context.Background(), "bucket", "alias", "file.txt", time.Now()); err != nil {
-		t.Fatal(err)
+	{
+		_, err := manager.UploadURL(context.Background(), "bucket", "alias", "file.txt", time.Now())
+		require.NoError(t, err)
 	}
 
-	if state.updates["bucket"] != 1 {
-		t.Fatal("multipart requires ETag exposure when an existing PUT rule omits it")
-	}
+	assert.Equal(t, 1, state.updates["bucket"], "multipart requires ETag exposure when an existing PUT rule omits it")
 
-	if len(state.cors["bucket"]) != 2 {
-		t.Fatal("existing CORS rule must be preserved")
-	}
+	assert.Len(t, state.cors["bucket"], 2, "existing CORS rule must be preserved")
 }
 
 // TestConcurrentBucketUploads ensures parallel uploads reuse a bucket's key
 // without granting permissions on any unrelated bucket.
 func TestConcurrentBucketUploads(t *testing.T) {
+	t.Parallel()
+
 	state := newFakeGarage()
 	store := &memoryKeyStore{}
 	manager := managerForTest(t, state, store)
@@ -394,24 +435,49 @@ func TestConcurrentBucketUploads(t *testing.T) {
 	wg.Wait()
 	close(failures)
 	for err := range failures {
-		t.Error(err)
+		assert.NoError(t, err)
 	}
 
-	if state.createCount != 3 || len(store.ids) != 3 || len(state.updates) != 3 {
-		t.Fatalf("expected exactly one key and CORS rule per bucket: keys=%v updates=%v", store.ids, state.updates)
-	}
+	assert.Equal(t, 3, state.createCount)
+	assert.Len(t, store.ids, 3)
+	assert.Len(t, state.updates, 3)
 }
 
 // TestManagerConfiguration rejects a disabled manager and unsafe public URLs.
 func TestManagerConfiguration(t *testing.T) {
-	manager, err := NewManager(nil, "", "garage", "https://web.example")
-	if err != nil || manager != nil {
-		t.Fatalf("disabled manager: %v", err)
-	}
+	t.Parallel()
 
-	for _, endpoint := range []string{"http://s3.example", "https://s3.example/path", "file:///tmp"} {
-		if _, err := NewManager(nil, endpoint, "garage", "https://web.example"); err == nil {
-			t.Fatalf("unsafe endpoint accepted: %s", endpoint)
+	manager, err := NewManager(nil, "", "garage", "https://web.example")
+	require.NoError(t, err)
+	assert.Nil(t, manager)
+
+	t.Run("http://s3.example", func(t *testing.T) {
+		t.Parallel()
+
+		endpoint := "http://s3.example"
+		{
+			_, err := NewManager(nil, endpoint, "garage", "https://web.example")
+			require.Error(t, err, "unsafe endpoint accepted: %s", endpoint)
 		}
-	}
+	})
+
+	t.Run("https://s3.example/path", func(t *testing.T) {
+		t.Parallel()
+
+		endpoint := "https://s3.example/path"
+		{
+			_, err := NewManager(nil, endpoint, "garage", "https://web.example")
+			require.Error(t, err, "unsafe endpoint accepted: %s", endpoint)
+		}
+	})
+
+	t.Run("file:///tmp", func(t *testing.T) {
+		t.Parallel()
+
+		endpoint := "file:///tmp"
+		{
+			_, err := NewManager(nil, endpoint, "garage", "https://web.example")
+			require.Error(t, err, "unsafe endpoint accepted: %s", endpoint)
+		}
+	})
 }

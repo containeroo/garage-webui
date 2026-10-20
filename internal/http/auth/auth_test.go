@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/credential"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,8 +46,10 @@ func (s *testStore) SetSessionTheme(_ context.Context, h []byte, theme string) e
 	return nil
 }
 func TestCredentialSessions(t *testing.T) {
+	t.Parallel()
+
 	revoked := false
-	scope := []string{"ListBuckets"}
+	scope := []string{string(admin.OpListBuckets)}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if revoked || r.Header.Get("Authorization") != "Bearer individual-token" {
 			w.WriteHeader(401)
@@ -60,7 +64,7 @@ func TestCredentialSessions(t *testing.T) {
 	require.NoError(t, err)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest("POST", "/api/login", nil)
-	require.NoError(t, service.Login(response, request, Credential{Kind: "admin", Token: "individual-token"}))
+	require.NoError(t, service.Login(response, request, Credential{Kind: credential.Admin, Token: "individual-token"}))
 	cookie := response.Result().Cookies()[0]
 	assert.True(t, cookie.HttpOnly)
 	assert.True(t, cookie.Secure)
@@ -77,13 +81,13 @@ func TestCredentialSessions(t *testing.T) {
 	id, err := replica.Authenticate(current)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", id.User)
-	assert.True(t, id.Allows("ListBuckets"))
-	assert.False(t, id.Allows("CreateKey"))
-	scope = []string{"CreateKey"}
+	assert.True(t, id.Allows(admin.OpListBuckets))
+	assert.False(t, id.Allows(admin.OpCreateKey))
+	scope = []string{string(admin.OpCreateKey)}
 	id, err = service.Authenticate(current)
 	require.NoError(t, err)
-	assert.True(t, id.Allows("CreateKey"))
-	assert.False(t, id.Allows("ListBuckets"))
+	assert.True(t, id.Allows(admin.OpCreateKey))
+	assert.False(t, id.Allows(admin.OpListBuckets))
 	revoked = true
 	_, err = service.Authenticate(current)
 	require.ErrorIs(t, err, ErrUnauthenticated)
@@ -94,6 +98,8 @@ func TestCredentialSessions(t *testing.T) {
 	require.ErrorIs(t, service.Login(httptest.NewRecorder(), request, Credential{Kind: "local", Token: "individual-token"}), ErrUnauthenticated)
 }
 func TestSessionTamperingAndExpiration(t *testing.T) {
+	t.Parallel()
+
 	store := &testStore{records: map[string]testRecord{}}
 	cfg := Config{PublicURL: "http://console.example", GarageURL: "http://garage:3903", SessionSecret: base64.StdEncoding.EncodeToString(make([]byte, 32))}
 	service, err := New(store, cfg)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/containeroo/garage-webui/internal/assembly"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/postgres"
 	"github.com/containeroo/garage-webui/internal/sqlite"
@@ -28,6 +29,8 @@ import (
 )
 
 func TestSQLiteGarageCredentialFlow(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.Open(context.Background(), "sqlite:"+filepath.Join(t.TempDir(), "console.db"), slog.Default())
 	require.NoError(t, err)
 	defer store.Close()
@@ -35,6 +38,8 @@ func TestSQLiteGarageCredentialFlow(t *testing.T) {
 }
 
 func TestGarageCredentialFlow(t *testing.T) {
+	t.Parallel()
+
 	dsn := os.Getenv("GARAGE_WEBUI_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set GARAGE_WEBUI_TEST_DATABASE_URL for PostgreSQL integration tests")
@@ -61,7 +66,7 @@ func TestGarageCredentialFlow(t *testing.T) {
 func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	t.Helper()
 	revoked := false
-	scope := []string{"ListBuckets", "ListAdminTokens", "CreateAdminToken", "UpdateAdminToken", "DeleteAdminToken"}
+	scope := []string{string(admin.OpListBuckets), string(admin.OpListAdminTokens), string(admin.OpCreateAdminToken), string(admin.OpUpdateAdminToken), string(admin.OpDeleteAdminToken)}
 	calls := []string{}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if revoked || r.Header.Get("Authorization") != "Bearer private-admin" {
@@ -71,11 +76,11 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 		op := strings.TrimPrefix(r.URL.Path, "/v2/")
 		calls = append(calls, op)
 		w.Header().Set("Content-Type", "application/json")
-		if op == "GetCurrentAdminTokenInfo" {
+		if op == string(admin.OpGetCurrentAdminTokenInfo) {
 			json.NewEncoder(w).Encode(map[string]any{"name": "alice", "scope": scope}) // nolint:errcheck
 			return
 		}
-		if op == "CreateAdminToken" {
+		if op == string(admin.OpCreateAdminToken) {
 			w.Write([]byte(`{"id":"new","name":"bob","scope":["ListBuckets"],"secretToken":"shown-once"}`)) // nolint:errcheck
 			return
 		}
@@ -125,7 +130,7 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, forged)
 	assert.Equal(t, 403, w.Code)
-	scope = []string{"ListBuckets"}
+	scope = []string{string(admin.OpListBuckets)}
 	assert.Equal(t, 403, call("GET", "/api/garage/ListAdminTokens", "", cookie).Code)
 	revoked = true
 	assert.Equal(t, 401, call("GET", "/api/garage/ListBuckets", "", cookie).Code)
@@ -137,17 +142,52 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	cookie = login.Result().Cookies()[0]
 	assert.Equal(t, 200, call("GET", "/api/garage/ListBuckets", "", cookie).Code)
 	assert.Contains(t, call("GET", "/api/garage/ListBuckets", "", cookie).Body.String(), "allowed")
-	for _, path := range []string{"/api/garage/ListAdminTokens", "/api/garage/ListKeys", "/api/garage/GetClusterStatus", "/api/garage/GetBucketInfo?id=other"} {
+	t.Run("/api/garage/ListAdminTokens", func(t *testing.T) {
+		path := "/api/garage/ListAdminTokens"
 		assert.Equal(t, 403, call("GET", path, "", cookie).Code)
-	}
+	})
+
+	t.Run("/api/garage/ListKeys", func(t *testing.T) {
+		path := "/api/garage/ListKeys"
+		assert.Equal(t, 403, call("GET", path, "", cookie).Code)
+	})
+
+	t.Run("/api/garage/GetClusterStatus", func(t *testing.T) {
+		path := "/api/garage/GetClusterStatus"
+		assert.Equal(t, 403, call("GET", path, "", cookie).Code)
+	})
+
+	t.Run("/api/garage/GetBucketInfo?id=other", func(t *testing.T) {
+		path := "/api/garage/GetBucketInfo?id=other"
+		assert.Equal(t, 403, call("GET", path, "", cookie).Code)
+	})
 	assert.Equal(t, 200, call("GET", "/api/garage/GetBucketInfo?id=allowed", "", cookie).Code)
 	assert.Equal(t, 400, call("POST", "/api/objects/presign", `{"bucketId":"other","action":"list"}`, cookie).Code)
 	signed := call("POST", "/api/objects/presign", `{"bucketId":"allowed","action":"list"}`, cookie)
 	assert.Equal(t, 200, signed.Code)
 	assert.Contains(t, signed.Body.String(), "GKbucket")
 	assert.NotContains(t, signed.Body.String(), "s3-secret")
-	for _, path := range []string{"/api/users", "/api/groups", "/api/registration", "/auth/login"} {
+	t.Run("/api/users", func(t *testing.T) {
+		path := "/api/users"
 		r := call("GET", path, "", cookie)
 		assert.Equal(t, 404, r.Code)
-	}
+	})
+
+	t.Run("/api/groups", func(t *testing.T) {
+		path := "/api/groups"
+		r := call("GET", path, "", cookie)
+		assert.Equal(t, 404, r.Code)
+	})
+
+	t.Run("/api/registration", func(t *testing.T) {
+		path := "/api/registration"
+		r := call("GET", path, "", cookie)
+		assert.Equal(t, 404, r.Code)
+	})
+
+	t.Run("/auth/login", func(t *testing.T) {
+		path := "/auth/login"
+		r := call("GET", path, "", cookie)
+		assert.Equal(t, 404, r.Code)
+	})
 }

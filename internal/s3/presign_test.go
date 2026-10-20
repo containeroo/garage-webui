@@ -13,6 +13,8 @@ import (
 
 // TestUploadURL verifies the signed request scope and encoding.
 func TestUploadURL(t *testing.T) {
+	t.Parallel()
+
 	signer, err := New("https://s3.example.com:8443", "garage", "GKtest", "private-secret", "https://web.example.com")
 	require.NoError(t, err)
 	first, err := signer.UploadURL("uploads", "dir/my file+☃.txt", time.Date(2026, 10, 17, 10, 30, 0, 0, time.UTC))
@@ -34,21 +36,134 @@ func TestUploadURL(t *testing.T) {
 
 // TestNewValidation protects signing configuration from malformed endpoints.
 func TestNewValidation(t *testing.T) {
-	for _, raw := range []string{"", "https://user@s3.example.com", "https://s3.example.com/base", "https://s3.example.com?q=1", "ftp://s3.example.com", "http://s3.example.com"} {
+	t.Parallel()
+
+	t.Run("empty endpoint", func(t *testing.T) {
+		t.Parallel()
+
+		raw := ""
 		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
 		assert.Error(t, err, raw)
-	}
+	})
+
+	t.Run("https://user@s3.example.com", func(t *testing.T) {
+		t.Parallel()
+
+		raw := "https://user@s3.example.com"
+		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
+		assert.Error(t, err, raw)
+	})
+
+	t.Run("https://s3.example.com/base", func(t *testing.T) {
+		t.Parallel()
+
+		raw := "https://s3.example.com/base"
+		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
+		assert.Error(t, err, raw)
+	})
+
+	t.Run("https://s3.example.com?q=1", func(t *testing.T) {
+		t.Parallel()
+
+		raw := "https://s3.example.com?q=1"
+		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
+		assert.Error(t, err, raw)
+	})
+
+	t.Run("ftp://s3.example.com", func(t *testing.T) {
+		t.Parallel()
+
+		raw := "ftp://s3.example.com"
+		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
+		assert.Error(t, err, raw)
+	})
+
+	t.Run("http://s3.example.com", func(t *testing.T) {
+		t.Parallel()
+
+		raw := "http://s3.example.com"
+		_, err := New(raw, "garage", "key", "secret", "https://web.example.com")
+		assert.Error(t, err, raw)
+	})
 }
 
 // TestInvalidKeys ensures object keys cannot break URL scoping.
 func TestInvalidKeys(t *testing.T) {
+	t.Parallel()
+
 	signer, err := New("http://localhost:3900", "garage", "key", "secret", "http://localhost:8080")
 	require.NoError(t, err)
-	for _, key := range []string{"", "../bad", "dir/../bad", "/absolute", "dir//bad", "bad\\key", "bad\nkey", strings.Repeat("a", 1025)} {
+	t.Run("empty object key", func(t *testing.T) {
+		t.Parallel()
+
+		key := ""
 		assert.False(t, objectpath.ValidObjectKey(key), key)
 		_, err := signer.UploadURL("bucket", key, time.Now())
 		assert.Error(t, err, key)
-	}
+	})
+
+	t.Run("../bad", func(t *testing.T) {
+		t.Parallel()
+
+		key := "../bad"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("dir/../bad", func(t *testing.T) {
+		t.Parallel()
+
+		key := "dir/../bad"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("/absolute", func(t *testing.T) {
+		t.Parallel()
+
+		key := "/absolute"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("dir//bad", func(t *testing.T) {
+		t.Parallel()
+
+		key := "dir//bad"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("bad\\key", func(t *testing.T) {
+		t.Parallel()
+
+		key := "bad\\key"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("bad\nkey", func(t *testing.T) {
+		t.Parallel()
+
+		key := "bad\nkey"
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
+
+	t.Run("oversized object key", func(t *testing.T) {
+		t.Parallel()
+
+		key := strings.Repeat("a", 1025)
+		assert.False(t, objectpath.ValidObjectKey(key), key)
+		_, err := signer.UploadURL("bucket", key, time.Now())
+		assert.Error(t, err, key)
+	})
 
 	assert.True(t, objectpath.ValidObjectKey("backups/2026-10-17.zip"))
 }

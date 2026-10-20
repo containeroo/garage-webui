@@ -3,163 +3,276 @@ package objects
 import (
 	"strings"
 	"testing"
+
+	"github.com/containeroo/garage-webui/internal/objectaction"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestObjectSigningValidation rejects malformed and privilege-changing S3 requests.
 func TestObjectSigningValidation(t *testing.T) {
-	base := Request{
-		BucketID: "bucket",
-		Key:      "folder/file.txt",
-	}
-	good := []Request{
-		{
+	t.Parallel()
+
+	t.Run("valid list prefix", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "list",
+			Action:   objectaction.List,
 			Prefix:   "folder/",
-		},
-		{
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid download", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "download",
-			Key:      base.Key,
-		},
-		{
+			Action:   objectaction.Download,
+			Key:      "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid preview", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "preview",
-			Key:      base.Key,
-		},
-		{
+			Action:   objectaction.Preview,
+			Key:      "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid deletion", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "delete",
-			Key:      base.Key,
-		},
-		{
+			Action:   objectaction.Delete,
+			Key:      "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid multipart start", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "multipart-start",
-			Key:      base.Key,
-		},
-		{
+			Action:   objectaction.MultipartStart,
+			Key:      "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid multipart part", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-part",
-			Key:        base.Key,
+			Action:     objectaction.MultipartPart,
+			Key:        "folder/file.txt",
 			UploadID:   "opaqueid",
 			PartNumber: 1,
-		},
-		{
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid multipart completion", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "multipart-complete",
-			Key:      base.Key,
+			Action:   objectaction.MultipartComplete,
+			Key:      "folder/file.txt",
 			UploadID: "opaqueid",
-		},
-		{
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid copy", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:  "bucket",
-			Action:    "copy",
+			Action:    objectaction.Copy,
 			Key:       "new.txt",
-			SourceKey: base.Key,
-		},
-		{
+			SourceKey: "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid multipart copy start", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:  "bucket",
-			Action:    "multipart-copy-start",
+			Action:    objectaction.MultipartCopyStart,
 			Key:       "new.txt",
-			SourceKey: base.Key,
-		},
-		{
+			SourceKey: "folder/file.txt",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("valid multipart copy part", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-copy-part",
+			Action:     objectaction.MultipartCopyPart,
 			Key:        "new.txt",
-			SourceKey:  base.Key,
+			SourceKey:  "folder/file.txt",
 			UploadID:   "opaqueid",
 			PartNumber: 1,
 			RangeStart: 0,
 			RangeEnd:   16777215,
-		},
-		{
-			BucketID:  "bucket",
-			Action:    "multipart-copy-complete",
-			Key:       "new.txt",
-			SourceKey: base.Key,
-			UploadID:  "opaqueid",
-		},
-	}
-	for _, input := range good {
-		if !validObjectRequest(input) {
-			t.Errorf("rejected: %+v", input)
 		}
-	}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
 
-	bad := []Request{
-		{
+	t.Run("valid multipart copy completion", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
+			BucketID:  "bucket",
+			Action:    objectaction.MultipartCopyComplete,
+			Key:       "new.txt",
+			SourceKey: "folder/file.txt",
+			UploadID:  "opaqueid",
+		}
+		assert.True(t, validObjectRequest(input), "rejected: %+v", input)
+	})
+
+	t.Run("reject missing bucket", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "",
-			Action:   "list",
-		},
-		{
+			Action:   objectaction.List,
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject prefix traversal", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "list",
+			Action:   objectaction.List,
 			Prefix:   "../secret",
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject upload ID on download", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
-			Action:   "download",
+			Action:   objectaction.Download,
 			Key:      "file",
 			UploadID: "illicit",
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject self copy", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:  "bucket",
-			Action:    "copy",
+			Action:    objectaction.Copy,
 			SourceKey: "file",
 			Key:       "file",
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject missing upload ID", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-part",
+			Action:     objectaction.MultipartPart,
 			Key:        "key",
 			PartNumber: 1,
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject excessive part number", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-part",
+			Action:     objectaction.MultipartPart,
 			Key:        "key",
 			UploadID:   "id",
 			PartNumber: 10001,
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject reversed range", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-copy-part",
+			Action:     objectaction.MultipartCopyPart,
 			Key:        "new",
 			SourceKey:  "old",
 			UploadID:   "id",
 			PartNumber: 1,
 			RangeStart: 2,
 			RangeEnd:   1,
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject excessive range", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:   "bucket",
-			Action:     "multipart-copy-part",
+			Action:     objectaction.MultipartCopyPart,
 			Key:        "new",
 			SourceKey:  "old",
 			UploadID:   "id",
 			PartNumber: 1,
 			RangeEnd:   6 << 30,
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject upload ID on copy start", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID:  "bucket",
-			Action:    "multipart-copy-start",
+			Action:    objectaction.MultipartCopyStart,
 			Key:       "new",
 			SourceKey: "old",
 			UploadID:  "unexpected",
-		},
-		{
+		}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
+
+	t.Run("reject unknown action", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{
 			BucketID: "bucket",
 			Action:   "unknown",
 			Key:      "new",
-		},
-	}
-	for _, input := range bad {
-		if validObjectRequest(input) {
-			t.Errorf("accepted: %+v", input)
 		}
-	}
+		assert.False(t, validObjectRequest(input), "accepted: %+v", input)
+	})
 
-	if validMultipartID(strings.Repeat("a", 2049)) {
-		t.Fatal("unbounded upload ID")
-	}
+	t.Run("reject oversized upload ID", func(t *testing.T) {
+		t.Parallel()
+
+		assert.False(t, validMultipartID(strings.Repeat("a", 2049)))
+	})
 }

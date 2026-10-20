@@ -14,10 +14,35 @@ func TestCredentialConfiguration(t *testing.T) {
 	cfg, err := Parse(nil, "test")
 	require.NoError(t, err)
 	assert.NotEmpty(t, cfg.SessionSecret)
-	for _, flag := range []string{"--auth-mode=local", "--garage-token=shared", "--local-login", "--oidc-issuer=https://issuer.example", "--allow-user-registration"} {
+	t.Run("--auth-mode=local", func(t *testing.T) {
+		flag := "--auth-mode=local"
 		_, err := Parse([]string{flag}, "test")
 		assert.Error(t, err)
-	}
+	})
+
+	t.Run("--garage-token=shared", func(t *testing.T) {
+		flag := "--garage-token=shared"
+		_, err := Parse([]string{flag}, "test")
+		assert.Error(t, err)
+	})
+
+	t.Run("--local-login", func(t *testing.T) {
+		flag := "--local-login"
+		_, err := Parse([]string{flag}, "test")
+		assert.Error(t, err)
+	})
+
+	t.Run("--oidc-issuer=https://issuer.example", func(t *testing.T) {
+		flag := "--oidc-issuer=https://issuer.example"
+		_, err := Parse([]string{flag}, "test")
+		assert.Error(t, err)
+	})
+
+	t.Run("--allow-user-registration", func(t *testing.T) {
+		flag := "--allow-user-registration"
+		_, err := Parse([]string{flag}, "test")
+		assert.Error(t, err)
+	})
 }
 
 func TestSQLiteConfiguration(t *testing.T) {

@@ -19,6 +19,8 @@ import (
 
 // TestLoadMigrations verifies ordering and filename validation.
 func TestLoadMigrations(t *testing.T) {
+	t.Parallel()
+
 	files := fstest.MapFS{
 		"migrations/002_second.sql": {Data: []byte("SELECT 2")},
 		"migrations/001_first.sql":  {Data: []byte("SELECT 1")},
@@ -29,51 +31,96 @@ func TestLoadMigrations(t *testing.T) {
 	assert.Equal(t, int64(1), migrations[0].version)
 	assert.Equal(t, int64(2), migrations[1].version)
 
-	for name, files := range map[string]fstest.MapFS{
-		"invalid name":        {"migrations/bad.sql": {}},
-		"zero version":        {"migrations/000_first.sql": {}},
-		"missing description": {"migrations/001_.sql": {}},
-		"negative version":    {"migrations/-2_bad.sql": {}},
-		"duplicate": {
-			"migrations/001_first.sql": {},
-			"migrations/1_second.sql":  {},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := loadMigrations(files)
-			require.Error(t, err)
-		})
-	}
+	t.Run("invalid name", func(t *testing.T) {
+		files := fstest.MapFS{"migrations/bad.sql": {}}
+		_, err := loadMigrations(files)
+		require.Error(t, err)
+	})
+
+	t.Run("zero version", func(t *testing.T) {
+		files := fstest.MapFS{"migrations/000_first.sql": {}}
+		_, err := loadMigrations(files)
+		require.Error(t, err)
+	})
+
+	t.Run("missing description", func(t *testing.T) {
+		files := fstest.MapFS{"migrations/001_.sql": {}}
+		_, err := loadMigrations(files)
+		require.Error(t, err)
+	})
+
+	t.Run("negative version", func(t *testing.T) {
+		files := fstest.MapFS{"migrations/-2_bad.sql": {}}
+		_, err := loadMigrations(files)
+		require.Error(t, err)
+	})
+
+	t.Run("duplicate", func(t *testing.T) {
+		files := fstest.MapFS{"migrations/001_first.sql": {}, "migrations/1_second.sql": {}}
+		_, err := loadMigrations(files)
+		require.Error(t, err)
+	})
 }
 
 // TestMigrationVersion validates the simple numeric-prefix filename convention.
 func TestMigrationVersion(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		version int64
-		valid   bool
-	}{
-		{"001_initial.sql", 1, true},
-		{"12_add_indexes.sql", 12, true},
-		{"bad.sql", 0, false},
-		{"3_.sql", 0, false},
-		{"0_baseline.sql", 0, false},
-		{"-1_removed.sql", 0, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			version, err := migrationVersion(tc.name)
-			if tc.valid {
-				require.NoError(t, err)
-				assert.Equal(t, tc.version, version)
-			} else {
-				require.Error(t, err)
-			}
-		})
-	}
+	t.Parallel()
+
+	t.Run("001_initial.sql", func(t *testing.T) {
+		t.Parallel()
+
+		version, err := migrationVersion("001_initial.sql")
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), version)
+	})
+
+	t.Run("12_add_indexes.sql", func(t *testing.T) {
+		t.Parallel()
+
+		version, err := migrationVersion("12_add_indexes.sql")
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(12), version)
+	})
+
+	t.Run("bad.sql", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := migrationVersion("bad.sql")
+
+		require.Error(t, err)
+	})
+
+	t.Run("3_.sql", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := migrationVersion("3_.sql")
+
+		require.Error(t, err)
+	})
+
+	t.Run("0_baseline.sql", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := migrationVersion("0_baseline.sql")
+
+		require.Error(t, err)
+	})
+
+	t.Run("-1_removed.sql", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := migrationVersion("-1_removed.sql")
+
+		require.Error(t, err)
+	})
 }
 
 // TestMigrationsIntegration verifies locking, rollback and repeat startup.
 func TestMigrationsIntegration(t *testing.T) {
+	t.Parallel()
+
 	dsn := os.Getenv("GARAGE_WEBUI_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set GARAGE_WEBUI_TEST_DATABASE_URL to run migration integration tests")

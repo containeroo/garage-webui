@@ -6,22 +6,34 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/signing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestBucketUsagePreflight rejects nonempty Garage buckets.
 func TestBucketUsagePreflight(t *testing.T) {
-	if !(admin.BucketInfo{Objects: 1}).HasObjects() || !(admin.BucketInfo{UnfinishedMultipartUploads: 1}).HasObjects() {
-		t.Fatal("nonempty bucket was accepted")
-	}
-	if (admin.BucketInfo{}).HasObjects() {
-		t.Fatal("empty bucket was rejected")
-	}
+	t.Parallel()
+
+	t.Run("finished objects", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, (admin.BucketInfo{Objects: 1}).HasObjects())
+	})
+	t.Run("unfinished multipart uploads", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, (admin.BucketInfo{UnfinishedMultipartUploads: 1}).HasObjects())
+	})
+	t.Run("empty bucket", func(t *testing.T) {
+		t.Parallel()
+
+		assert.False(t, (admin.BucketInfo{}).HasObjects())
+	})
 }
 
 // deletionStore tracks managed Garage keys while a test holds an explicit lock.
@@ -66,6 +78,8 @@ func (l *deletionLock) Close() error {
 
 // TestDeleteBucketRecovery keeps key references when deletion is interrupted.
 func TestDeleteBucketRecovery(t *testing.T) {
+	t.Parallel()
+
 	bucketExists := true
 	failKeyDelete := true
 	var deletedKeys []string
@@ -97,32 +111,31 @@ func TestDeleteBucketRecovery(t *testing.T) {
 
 	store := &deletionStore{keys: []string{"managed-read", "managed-write"}}
 	client, clientErr := admin.New(api.URL, "test")
-	if clientErr != nil {
-		t.Fatal(clientErr)
-	}
+	require.NoError(t, clientErr)
 	service := New(store)
 
 	status, _, err := service.Delete(context.Background(), client, "bucket")
-	if err == nil || status != http.StatusOK {
-		t.Fatalf("expected incomplete key cleanup after bucket deletion, got status=%d err=%v", status, err)
-	}
-	if !reflect.DeepEqual(store.keys, []string{"managed-read", "managed-write"}) {
-		t.Fatalf("lost key references needed to resume deletion: %v", store.keys)
-	}
+	require.Error(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, []string{"managed-read", "managed-write"}, store.keys)
 
 	failKeyDelete = false
 	status, _, err = service.Delete(context.Background(), client, "bucket")
-	if err != nil || status != http.StatusNoContent {
-		t.Fatalf("could not resume deletion, status=%d err=%v", status, err)
-	}
-	if len(store.keys) != 0 || deleteBucketCalls != 1 || len(deletedKeys) != 2 {
-		t.Fatalf("cleanup incomplete: keys=%v calls=%d revoked=%v", store.keys, deleteBucketCalls, deletedKeys)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, status)
+	assert.Empty(t, store.keys)
+	assert.Equal(t, 1, deleteBucketCalls)
+	assert.Len(t, deletedKeys, 2)
 }
 
 // TestDeleteBucketFailureDoesNotRevokeKeys preserves usable credentials on failure.
 func TestDeleteBucketFailureDoesNotRevokeKeys(t *testing.T) {
-	for _, failWithObjects := range []bool{false, true} {
+	t.Parallel()
+
+	t.Run("upstream deletion conflict", func(t *testing.T) {
+		t.Parallel()
+
+		failWithObjects := false
 		var keysRevoked bool
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
@@ -140,14 +153,44 @@ func TestDeleteBucketFailureDoesNotRevokeKeys(t *testing.T) {
 		}))
 		store := &deletionStore{keys: []string{"managed-key"}}
 		client, clientErr := admin.New(api.URL, "test")
-		if clientErr != nil {
-			t.Fatal(clientErr)
-		}
+		require.NoError(t, clientErr)
 		service := New(store)
 		status, _, err := service.Delete(context.Background(), client, "bucket")
 		api.Close()
-		if err == nil || status != http.StatusConflict || keysRevoked || len(store.keys) != 1 {
-			t.Fatalf("deletion failure revoked managed keys: status=%d err=%v revoked=%t keys=%v", status, err, keysRevoked, store.keys)
-		}
-	}
+		require.Error(t, err)
+		assert.Equal(t, http.StatusConflict, status)
+		assert.False(t, keysRevoked, "failed deletion must not revoke keys")
+		assert.Equal(t, []string{"managed-key"}, store.keys)
+	})
+
+	t.Run("nonempty bucket", func(t *testing.T) {
+		t.Parallel()
+
+		failWithObjects := true
+		var keysRevoked bool
+		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v2/GetBucketInfo":
+				objects := 0
+				if failWithObjects {
+					objects = 1
+				}
+				_, _ = fmt.Fprintf(w, `{"id":"bucket","objects":%d}`, objects)
+			case "/v2/DeleteBucket":
+				w.WriteHeader(http.StatusConflict)
+			case "/v2/DeleteKey":
+				keysRevoked = true
+			}
+		}))
+		store := &deletionStore{keys: []string{"managed-key"}}
+		client, clientErr := admin.New(api.URL, "test")
+		require.NoError(t, clientErr)
+		service := New(store)
+		status, _, err := service.Delete(context.Background(), client, "bucket")
+		api.Close()
+		require.Error(t, err)
+		assert.Equal(t, http.StatusConflict, status)
+		assert.False(t, keysRevoked, "failed deletion must not revoke keys")
+		assert.Equal(t, []string{"managed-key"}, store.keys)
+	})
 }

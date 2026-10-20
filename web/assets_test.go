@@ -13,6 +13,7 @@ import (
 // TestEmbeddedFrontend verifies the built entry point and its bundled assets.
 func TestEmbedded(t *testing.T) {
 	t.Parallel()
+
 	index, err := fs.ReadFile(Assets, "index.html")
 
 	t.Run("index.html", func(t *testing.T) {
@@ -23,13 +24,38 @@ func TestEmbedded(t *testing.T) {
 		notFound, err := fs.ReadFile(Assets, "404.html")
 		require.NoError(t, err)
 
-		for _, name := range []string{"favicon-16x16.png", "favicon-32x32.png", "apple-touch-icon.png"} {
+		t.Run("favicon-16x16.png", func(t *testing.T) {
+			t.Parallel()
+
+			name := "favicon-16x16.png"
 			assert.Contains(t, string(index), `href="./`+name+`"`)
 			assert.Contains(t, string(notFound), `href="./`+name+`"`)
 			content, err := fs.ReadFile(Assets, name)
 			require.NoError(t, err, "embedded favicon %s", name)
 			assert.NotEmpty(t, content, "embedded favicon %s", name)
-		}
+		})
+
+		t.Run("favicon-32x32.png", func(t *testing.T) {
+			t.Parallel()
+
+			name := "favicon-32x32.png"
+			assert.Contains(t, string(index), `href="./`+name+`"`)
+			assert.Contains(t, string(notFound), `href="./`+name+`"`)
+			content, err := fs.ReadFile(Assets, name)
+			require.NoError(t, err, "embedded favicon %s", name)
+			assert.NotEmpty(t, content, "embedded favicon %s", name)
+		})
+
+		t.Run("apple-touch-icon.png", func(t *testing.T) {
+			t.Parallel()
+
+			name := "apple-touch-icon.png"
+			assert.Contains(t, string(index), `href="./`+name+`"`)
+			assert.Contains(t, string(notFound), `href="./`+name+`"`)
+			content, err := fs.ReadFile(Assets, name)
+			require.NoError(t, err, "embedded favicon %s", name)
+			assert.NotEmpty(t, content, "embedded favicon %s", name)
+		})
 	})
 
 	t.Run("assets", func(t *testing.T) {

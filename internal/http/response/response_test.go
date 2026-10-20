@@ -9,6 +9,8 @@ import (
 )
 
 func TestError(t *testing.T) {
+	t.Parallel()
+
 	w := httptest.NewRecorder()
 	Error(w, "invalid request", http.StatusBadRequest)
 	assert.Equal(t, http.StatusBadRequest, w.Code)

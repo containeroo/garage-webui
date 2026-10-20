@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -17,17 +16,42 @@ import (
 
 // TestSigningKeyColumns rejects unsupported purposes before SQL is constructed.
 func TestSigningKeyColumns(t *testing.T) {
-	for _, purpose := range []signing.Purpose{signing.Write, signing.Read, signing.Copy} {
+	t.Parallel()
+
+	t.Run("write purpose", func(t *testing.T) {
+		t.Parallel()
+
+		purpose := signing.Write
 		column, err := signingKeyColumn(purpose)
 		require.NoError(t, err)
 		assert.NotEmpty(t, column)
-	}
+	})
+
+	t.Run("read purpose", func(t *testing.T) {
+		t.Parallel()
+
+		purpose := signing.Read
+		column, err := signingKeyColumn(purpose)
+		require.NoError(t, err)
+		assert.NotEmpty(t, column)
+	})
+
+	t.Run("copy purpose", func(t *testing.T) {
+		t.Parallel()
+
+		purpose := signing.Copy
+		column, err := signingKeyColumn(purpose)
+		require.NoError(t, err)
+		assert.NotEmpty(t, column)
+	})
 	_, err := signingKeyColumn("unknown")
 	require.Error(t, err)
 }
 
 // TestSigningKeyCoordination verifies explicit bucket locks, cancellation and recovery.
 func TestSigningKeyCoordination(t *testing.T) {
+	t.Parallel()
+
 	dsn := os.Getenv("GARAGE_WEBUI_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set GARAGE_WEBUI_TEST_DATABASE_URL for PostgreSQL integration tests")
@@ -120,5 +144,5 @@ func TestSigningKeyCoordination(t *testing.T) {
 
 	_, err = store.LockBucket(ctx, "")
 	require.Error(t, err)
-	assert.False(t, errors.Is(err, context.Canceled))
+	assert.NotErrorIs(t, err, context.Canceled)
 }

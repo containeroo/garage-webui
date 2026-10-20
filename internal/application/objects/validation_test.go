@@ -4,70 +4,88 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containeroo/garage-webui/internal/objectaction"
 	"github.com/stretchr/testify/assert"
 )
 
 // TestValidObjectRequest rejects bad scopes, unsupported actions and pagination abuse.
 func TestValidObjectRequest(t *testing.T) {
-	for _, tc := range []struct {
-		request Request
-		valid   bool
-	}{
-		{Request{
-			BucketID: "bucket",
-			Action:   "list",
-		}, true},
-		{Request{
-			BucketID:     "bucket",
-			Action:       "list",
-			Continuation: "opaque+token/=",
-		}, true},
-		{Request{
-			BucketID: "bucket",
-			Action:   "download",
-			Key:      "folder/file.txt",
-		}, true},
-		{Request{
-			BucketID: "bucket",
-			Action:   "delete",
-			Key:      "folder/file.txt",
-		}, true},
-		{Request{
-			BucketID: "",
-			Action:   "list",
-		}, false},
-		{Request{
-			BucketID: "bucket",
-			Action:   "list",
-			Key:      "other",
-		}, false},
-		{Request{
-			BucketID:     "bucket",
-			Action:       "list",
-			Continuation: strings.Repeat("x", 4097),
-		}, false},
-		{Request{
-			BucketID: "bucket",
-			Action:   "download",
-			Key:      "../file",
-		}, false},
-		{Request{
-			BucketID: "bucket",
-			Action:   "delete",
-			Key:      "",
-		}, false},
-		{Request{
-			BucketID:     "bucket",
-			Action:       "delete",
-			Key:          "file",
-			Continuation: "other",
-		}, false},
-		{Request{
-			BucketID: "bucket",
-			Action:   "unknown",
-			Key:      "file",
-		}, false},
-	} {
-		assert.Equal(t, tc.valid, validObjectRequest(tc.request), "%+v", tc.request)
-	}
+	t.Parallel()
+
+	t.Run("list bucket", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.List}
+		assert.True(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("list with continuation", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.List, Continuation: "opaque+token/="}
+		assert.True(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("download object", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.Download, Key: "folder/file.txt"}
+		assert.True(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("delete object", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.Delete, Key: "folder/file.txt"}
+		assert.True(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject missing bucket", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "", Action: objectaction.List}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject object key in listing", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.List, Key: "other"}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject oversized continuation", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.List, Continuation: strings.Repeat("x", 4097)}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject traversal", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.Download, Key: "../file"}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject empty object key", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.Delete, Key: ""}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject continuation on delete", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: objectaction.Delete, Key: "file", Continuation: "other"}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
+
+	t.Run("reject unknown action", func(t *testing.T) {
+		t.Parallel()
+
+		input := Request{BucketID: "bucket", Action: "unknown", Key: "file"}
+		assert.False(t, validObjectRequest(input), "%+v", input)
+	})
 }

@@ -11,22 +11,33 @@ import (
 )
 
 func TestRequestContextAndAPIHeaders(t *testing.T) {
-	for _, tc := range []struct {
-		path, cache string
-	}{
-		{"/api/session", "no-store"},
-		{"/assets/app.js", ""},
-	} {
-		t.Run(tc.path, func(t *testing.T) {
-			handler := httpkitmiddleware.Chain(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, ok := w.(*httpkitresponse.RequestWriter)
-				assert.True(t, ok)
-				w.WriteHeader(http.StatusCreated)
-			}), APIHeaders(), RequestContext())
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
-			assert.Equal(t, tc.cache, w.Header().Get("Cache-Control"))
-			assert.Equal(t, http.StatusCreated, w.Code)
-		})
-	}
+	t.Parallel()
+
+	t.Run("/api/session", func(t *testing.T) {
+		t.Parallel()
+
+		handler := httpkitmiddleware.Chain(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, ok := w.(*httpkitresponse.RequestWriter)
+			assert.True(t, ok)
+			w.WriteHeader(http.StatusCreated)
+		}), APIHeaders(), RequestContext())
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+		assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("/assets/app.js", func(t *testing.T) {
+		t.Parallel()
+
+		handler := httpkitmiddleware.Chain(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, ok := w.(*httpkitresponse.RequestWriter)
+			assert.True(t, ok)
+			w.WriteHeader(http.StatusCreated)
+		}), APIHeaders(), RequestContext())
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+		assert.Equal(t, "", w.Header().Get("Cache-Control"))
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
 }

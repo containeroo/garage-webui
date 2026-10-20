@@ -10,6 +10,8 @@ import (
 )
 
 func TestSQLiteSelection(t *testing.T) {
+	t.Parallel()
+
 	cfg := Config{URL: "sqlite:" + filepath.Join(t.TempDir(), "console.db")}
 	store, err := Open(context.Background(), cfg, slog.Default())
 	require.NoError(t, err)
@@ -21,10 +23,29 @@ func TestSQLiteSelection(t *testing.T) {
 }
 
 func TestInvalidDatabaseURL(t *testing.T) {
-	for _, value := range []string{"", "mysql://localhost/database", "postgres://%invalid"} {
-		t.Run(value, func(t *testing.T) {
-			_, err := Open(context.Background(), Config{URL: value}, slog.Default())
-			require.Error(t, err)
-		})
-	}
+	t.Parallel()
+
+	t.Run("empty URL", func(t *testing.T) {
+		t.Parallel()
+
+		value := ""
+		_, err := Open(context.Background(), Config{URL: value}, slog.Default())
+		require.Error(t, err)
+	})
+
+	t.Run("mysql://localhost/database", func(t *testing.T) {
+		t.Parallel()
+
+		value := "mysql://localhost/database"
+		_, err := Open(context.Background(), Config{URL: value}, slog.Default())
+		require.Error(t, err)
+	})
+
+	t.Run("postgres://%invalid", func(t *testing.T) {
+		t.Parallel()
+
+		value := "postgres://%invalid"
+		_, err := Open(context.Background(), Config{URL: value}, slog.Default())
+		require.Error(t, err)
+	})
 }

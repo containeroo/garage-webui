@@ -29,6 +29,8 @@ func openTestStore(t *testing.T) (store *Store, databaseURL string) {
 }
 
 func TestSessionsPersistAndExpire(t *testing.T) {
+	t.Parallel()
+
 	store, url := openTestStore(t)
 	ctx := context.Background()
 	hash := []byte("session-hash")
@@ -58,6 +60,8 @@ func TestSessionsPersistAndExpire(t *testing.T) {
 }
 
 func TestExclusiveProcessOwnership(t *testing.T) {
+	t.Parallel()
+
 	store, url := openTestStore(t)
 	_, err := Open(context.Background(), url, slog.Default())
 	require.ErrorContains(t, err, "already in use")
@@ -69,6 +73,8 @@ func TestExclusiveProcessOwnership(t *testing.T) {
 }
 
 func TestBucketLocksAndRecovery(t *testing.T) {
+	t.Parallel()
+
 	store, url := openTestStore(t)
 	ctx := context.Background()
 	first, err := store.LockBucket(ctx, "bucket")
@@ -112,6 +118,8 @@ func TestBucketLocksAndRecovery(t *testing.T) {
 }
 
 func TestBucketProvisioningDoesNotBlockSessionWrites(t *testing.T) {
+	t.Parallel()
+
 	store, _ := openTestStore(t)
 	ctx := context.Background()
 	lock, err := store.LockBucket(ctx, "bucket")
@@ -123,6 +131,8 @@ func TestBucketProvisioningDoesNotBlockSessionWrites(t *testing.T) {
 }
 
 func TestConcurrentBucketLocks(t *testing.T) {
+	t.Parallel()
+
 	store, _ := openTestStore(t)
 	var holders atomic.Int32
 	var wg sync.WaitGroup
@@ -154,6 +164,8 @@ func TestConcurrentBucketLocks(t *testing.T) {
 }
 
 func TestConcurrentLoginBudget(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	store, url := openTestStore(t)
 	ctx := context.Background()
@@ -200,12 +212,78 @@ func TestConcurrentLoginBudget(t *testing.T) {
 }
 
 func TestSQLiteURLValidation(t *testing.T) {
-	for _, url := range []string{"", "postgres://localhost/db", "sqlite://remote/db", "sqlite:", "sqlite::memory:", "sqlite:///tmp/db?mode=ro", "sqlite:///tmp/db#fragment"} {
-		t.Run(url, func(t *testing.T) { _, err := databasePath(url); require.Error(t, err) })
-	}
-	for _, url := range []string{"sqlite:console.db", "sqlite:///tmp/console.db"} {
+	t.Parallel()
+
+	t.Run("empty URL", func(t *testing.T) {
+		t.Parallel()
+
+		url := ""
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("postgres://localhost/db", func(t *testing.T) {
+		t.Parallel()
+
+		url := "postgres://localhost/db"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("sqlite://remote/db", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite://remote/db"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("sqlite:", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite:"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("sqlite::memory:", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite::memory:"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("sqlite:///tmp/db?mode=ro", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite:///tmp/db?mode=ro"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+
+	t.Run("sqlite:///tmp/db#fragment", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite:///tmp/db#fragment"
+		_, err := databasePath(url)
+		require.Error(t, err)
+	})
+	t.Run("sqlite:console.db", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite:console.db"
 		path, err := databasePath(url)
 		require.NoError(t, err)
 		assert.True(t, filepath.IsAbs(path))
-	}
+	})
+
+	t.Run("sqlite:///tmp/console.db", func(t *testing.T) {
+		t.Parallel()
+
+		url := "sqlite:///tmp/console.db"
+		path, err := databasePath(url)
+		require.NoError(t, err)
+		assert.True(t, filepath.IsAbs(path))
+	})
 }
