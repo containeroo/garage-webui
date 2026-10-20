@@ -15,8 +15,10 @@ var ErrUnauthorized = errors.New("garage S3 credentials rejected")
 
 // Client performs authenticated S3 reads required by the application backend.
 type Client struct {
+	// signer signs outgoing S3 requests.
 	signer *Presigner
-	http   *http.Client
+	// http executes outgoing HTTP requests.
+	http *http.Client
 }
 
 // NewClient constructs an S3 client using the supplied, unmodified key credentials.
@@ -61,8 +63,11 @@ func (c *Client) ListBuckets(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("garage S3 ListBuckets returned HTTP %d", resp.StatusCode)
 	}
 
+	// result decodes the S3 bucket listing response.
 	var result struct {
+		// Buckets contains the buckets returned by S3.
 		Buckets []struct {
+			// Name contains the bucket name returned by S3.
 			Name string `xml:"Name"`
 		} `xml:"Buckets>Bucket"`
 	}

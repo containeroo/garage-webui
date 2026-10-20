@@ -10,30 +10,47 @@ import (
 	"github.com/containeroo/garage-webui/internal/application/objects"
 	"github.com/containeroo/garage-webui/internal/http/middleware"
 	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
+	"github.com/containeroo/garage-webui/internal/objectaction"
 	"github.com/containeroo/garage-webui/internal/s3"
 )
 
 // objectRequest contains the JSON representation of an object operation.
 type objectRequest struct {
-	BucketID     string `json:"bucketId"`
-	Action       string `json:"action"`
-	Key          string `json:"key"`
+	// BucketID identifies the target bucket.
+	BucketID string `json:"bucketId"`
+	// Action identifies the object operation to sign.
+	Action objectaction.Action `json:"action"`
+	// Key identifies the destination object.
+	Key string `json:"key"`
+	// Continuation holds the pagination token for the next object listing.
 	Continuation string `json:"continuationToken"`
-	Prefix       string `json:"prefix"`
-	SourceKey    string `json:"sourceKey"`
-	UploadID     string `json:"uploadId"`
-	PartNumber   int    `json:"partNumber"`
-	RangeStart   int64  `json:"rangeStart"`
-	RangeEnd     int64  `json:"rangeEnd"`
+	// Prefix filters listed objects by key prefix.
+	Prefix string `json:"prefix"`
+	// SourceKey identifies the source object for a copy.
+	SourceKey string `json:"sourceKey"`
+	// UploadID identifies the active multipart upload.
+	UploadID string `json:"uploadId"`
+	// PartNumber identifies the one-based multipart part.
+	PartNumber int `json:"partNumber"`
+	// RangeStart sets the inclusive first byte of the source range.
+	RangeStart int64 `json:"rangeStart"`
+	// RangeEnd sets the inclusive last byte of the source range.
+	RangeEnd int64 `json:"rangeEnd"`
 }
 
 // PresignObject authorizes listing, downloading or deleting without proxying data.
 func PresignObject(objectServices ObjectServices, logger *slog.Logger) http.HandlerFunc {
+	// presignObjectResponse describes the signed object request and required copy headers.
 	type presignObjectResponse struct {
-		URL         string            `json:"url"`
-		Method      string            `json:"method"`
-		ExpiresIn   int               `json:"expiresIn"`
-		CopySource  string            `json:"copySource"`
+		// URL contains the signed request URL.
+		URL string `json:"url"`
+		// Method specifies the HTTP method for the signed request.
+		Method string `json:"method"`
+		// ExpiresIn specifies the signed request lifetime in seconds.
+		ExpiresIn int `json:"expiresIn"`
+		// CopySource contains the encoded copy source header value.
+		CopySource string `json:"copySource"`
+		// CopyHeaders contains the headers required by a multipart copy.
 		CopyHeaders map[string]string `json:"copyHeaders"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {

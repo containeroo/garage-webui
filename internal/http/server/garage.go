@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/containeroo/garage-webui/internal/application/objects"
+	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/http/middleware"
@@ -20,7 +21,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := middleware.RequestIdentity(r)
 		op := r.PathValue("operation")
-		if id.Credential.Kind == "s3" {
+		if id.Credential.Kind == credential.S3 {
 			s3Buckets.ServeHTTP(w, r)
 			return
 		}
@@ -37,7 +38,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 			return
 		}
 
-		if !id.Allows(op) {
+		if !id.Allows(operation) {
 			httpresponse.Error(w, "token does not allow this operation", http.StatusForbidden)
 			return
 		}
@@ -115,5 +116,5 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 
 // canCleanupBucket checks the additional Garage scopes required for key cleanup.
 func canCleanupBucket(id auth.Identity) bool {
-	return id.Allows("DeleteKey") && id.Allows("GetBucketInfo")
+	return id.Allows(admin.OpDeleteKey) && id.Allows(admin.OpGetBucketInfo)
 }

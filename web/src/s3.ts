@@ -1,21 +1,7 @@
+import { ObjectAction } from "./domain";
 import { request } from "./api";
 import { abortMultipart } from "./multipart";
 
-/** An object operation that the backend can authorize and sign. */
-export type S3Action =
-  | "list"
-  | "download"
-  | "preview"
-  | "delete"
-  | "copy"
-  | "multipart-start"
-  | "multipart-part"
-  | "multipart-complete"
-  | "multipart-abort"
-  | "multipart-copy-start"
-  | "multipart-copy-part"
-  | "multipart-copy-complete"
-  | "multipart-copy-abort";
 /** A short-lived S3 request authorized for one object operation. */
 export type SignedOperation = {
   /** Short-lived authorized URL for this browser operation. */
@@ -86,7 +72,7 @@ const MIN_PART = 16 * 1024 ** 2;
 // signOperation delegates authentication and S3 signing to the Web UI backend.
 export function signOperation(
   bucketId: string,
-  action: S3Action,
+  action: ObjectAction,
   input: OperationInput = {},
   signal?: AbortSignal,
 ): Promise<SignedOperation> {
@@ -149,7 +135,7 @@ export async function listObjects(
 ): Promise<ObjectPage> {
   const signed = await signOperation(
     bucketId,
-    "list",
+    ObjectAction.List,
     { prefix, continuationToken },
     signal,
   );
@@ -240,7 +226,7 @@ export async function uploadObject(
   }
   const begin = await signOperation(
     bucketId,
-    "multipart-start",
+    ObjectAction.MultipartStart,
     { key },
     signal,
   );
@@ -274,7 +260,7 @@ export async function uploadObject(
       const data = file.slice(start, Math.min(file.size, start + chunk));
       const signed = await signOperation(
         bucketId,
-        "multipart-part",
+        ObjectAction.MultipartPart,
         { key, uploadId, partNumber: number },
         signal,
       );
@@ -290,7 +276,7 @@ export async function uploadObject(
     const xml = completionXML(parts);
     const signed = await signOperation(
       bucketId,
-      "multipart-complete",
+      ObjectAction.MultipartComplete,
       { key, uploadId },
       signal,
     );
@@ -311,7 +297,7 @@ export async function uploadObject(
       const cleanupSignal = AbortSignal.timeout(10000);
       const abort = await signOperation(
         bucketId,
-        "multipart-abort",
+        ObjectAction.MultipartAbort,
         {
           key,
           uploadId,
@@ -342,7 +328,7 @@ export async function deleteObject(
   bucketId: string,
   key: string,
 ): Promise<void> {
-  const signed = await signOperation(bucketId, "delete", { key });
+  const signed = await signOperation(bucketId, ObjectAction.Delete, { key });
   const response = await fetch(signed.url, {
     method: "DELETE",
     credentials: "omit",
@@ -363,7 +349,10 @@ export async function copyObject(
   if (size < 0 || size > MAX_OBJECT)
     throw new Error("unsupported source object size");
   if (size <= 5 * 1024 ** 3) {
-    const signed = await signOperation(bucketId, "copy", { sourceKey, key });
+    const signed = await signOperation(bucketId, ObjectAction.Copy, {
+      sourceKey,
+      key,
+    });
     const response = await fetch(signed.url, {
       method: "PUT",
       credentials: "omit",
@@ -387,7 +376,11 @@ async function copyMultipart(
   size: number,
 ): Promise<void> {
   const input = { sourceKey, key };
-  const begin = await signOperation(bucketId, "multipart-copy-start", input);
+  const begin = await signOperation(
+    bucketId,
+    ObjectAction.MultipartCopyStart,
+    input,
+  );
   const created = await fetch(begin.url, {
     method: "POST",
     credentials: "omit",
@@ -408,13 +401,17 @@ async function copyMultipart(
   const chunk = partSize(size);
   try {
     for (let start = 0, number = 1; start < size; start += chunk, number++) {
-      const signed = await signOperation(bucketId, "multipart-copy-part", {
-        ...input,
-        uploadId,
-        partNumber: number,
-        rangeStart: start,
-        rangeEnd: Math.min(size, start + chunk) - 1,
-      });
+      const signed = await signOperation(
+        bucketId,
+        ObjectAction.MultipartCopyPart,
+        {
+          ...input,
+          uploadId,
+          partNumber: number,
+          rangeStart: start,
+          rangeEnd: Math.min(size, start + chunk) - 1,
+        },
+      );
       const response = await fetch(signed.url, {
         method: "PUT",
         credentials: "omit",
@@ -430,10 +427,14 @@ async function copyMultipart(
       parts.push({ number, etag });
     }
     const body = completionXML(parts);
-    const finish = await signOperation(bucketId, "multipart-copy-complete", {
-      ...input,
-      uploadId,
-    });
+    const finish = await signOperation(
+      bucketId,
+      ObjectAction.MultipartCopyComplete,
+      {
+        ...input,
+        uploadId,
+      },
+    );
     const response = await fetch(finish.url, {
       method: "POST",
       body,
@@ -447,7 +448,7 @@ async function copyMultipart(
       const cleanupSignal = AbortSignal.timeout(10000);
       const abort = await signOperation(
         bucketId,
-        "multipart-copy-abort",
+        ObjectAction.MultipartCopyAbort,
         {
           ...input,
           uploadId,

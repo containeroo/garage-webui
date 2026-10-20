@@ -7,6 +7,7 @@ import {
   LockKeyhole,
 } from "lucide-react";
 import { short, type Bucket } from "../api";
+import { BucketTab } from "../domain";
 
 /** Metric renders a labeled workspace summary with an optional health indicator. */
 export function Metric({
@@ -52,7 +53,7 @@ export function BucketRows({
   /** Buckets accessible to the current credential. */
   buckets: Bucket[];
   /** Opens the chosen bucket and optional detail tab. */
-  onSelect: (b: Bucket, tab?: "overview" | "permissions" | "browse") => void;
+  onSelect: (b: Bucket, tab?: BucketTab) => void;
   /** Whether the initial resource list loaded successfully. */
   loaded: boolean;
   /** Whether the list is currently awaiting a response. */
@@ -83,7 +84,12 @@ export function BucketRows({
         <div className="table-row bucket-columns" key={bucket.id}>
           <button
             className="item-name bucket-name-button"
-            onClick={() => onSelect(bucket, browseOnly ? "browse" : "overview")}
+            onClick={() =>
+              onSelect(
+                bucket,
+                browseOnly ? BucketTab.Browse : BucketTab.Overview,
+              )
+            }
           >
             <div className="item-icon">
               <Database size={16} />
@@ -99,12 +105,12 @@ export function BucketRows({
           <div className="bucket-actions">
             {(
               [
-                ["Overview", "overview", LayoutDashboard],
-                ["Permissions", "permissions", LockKeyhole],
-                ["Manage objects", "browse", FolderOpen],
+                ["Overview", BucketTab.Overview, LayoutDashboard],
+                ["Permissions", BucketTab.Permissions, LockKeyhole],
+                ["Manage objects", BucketTab.Browse, FolderOpen],
               ] as const
             )
-              .filter(([, tab]) => !browseOnly || tab === "browse")
+              .filter(([, tab]) => !browseOnly || tab === BucketTab.Browse)
               .map(([label, tab, Icon]) => (
                 <button
                   key={tab}

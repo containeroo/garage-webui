@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/objectaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,12 +47,12 @@ func (s *signerStub) CopyURL(context.Context, string, string, string, string, ti
 	s.called = "copy"
 	return "url", "source", nil
 }
-func (s *signerStub) MultipartURL(_ context.Context, _, _, _, _, action string, _ int, _ time.Time) (string, error) {
-	s.called = action
+func (s *signerStub) MultipartURL(_ context.Context, _, _, _, _ string, action objectaction.Action, _ int, _ time.Time) (string, error) {
+	s.called = string(action)
 	return "url", nil
 }
-func (s *signerStub) CopyMultipartURL(_ context.Context, _, _, _, _, _, action string, _ int, _, _ int64, _ time.Time) (string, map[string]string, error) {
-	s.called = action
+func (s *signerStub) CopyMultipartURL(_ context.Context, _, _, _, _, _ string, action objectaction.Action, _ int, _, _ int64, _ time.Time) (string, map[string]string, error) {
+	s.called = string(action)
 	return "url", map[string]string{"copy": "value"}, nil
 }
 
@@ -67,7 +68,7 @@ func TestPrepare(t *testing.T) {
 		t.Run(tc.action, func(t *testing.T) {
 			signer := &signerStub{}
 			service := New(&bucketStub{}, signer)
-			result, err := service.sign(context.Background(), "bucket", "alias", Request{Action: tc.action}, time.Time{})
+			result, err := service.sign(context.Background(), "bucket", "alias", Request{Action: objectaction.Action(tc.action)}, time.Time{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.action, signer.called)
 			assert.Equal(t, tc.method, result.Method)
@@ -77,6 +78,15 @@ func TestPrepare(t *testing.T) {
 
 	_, err := New(&bucketStub{}, &signerStub{}).Prepare(context.Background(), "admin", Request{Action: "unknown"}, time.Time{})
 	require.Error(t, err)
+}
+
+func TestSignRejectsUnknownAction(t *testing.T) {
+	for _, action := range []objectaction.Action{"", "unsupported", "multipart-unknown"} {
+		signer := &signerStub{}
+		_, err := New(&bucketStub{}, signer).sign(context.Background(), "bucket", "alias", Request{Action: action}, time.Time{})
+		require.Error(t, err)
+		assert.Empty(t, signer.called)
+	}
 }
 
 func TestPrepareChecksBeforeResolving(t *testing.T) {

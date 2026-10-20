@@ -13,12 +13,18 @@ import (
 
 // corsRule uses Garage Admin API's XML-style JSON field names.
 type corsRule struct {
-	ID            string   `json:"ID,omitempty"`
+	// ID identifies the managed CORS rule.
+	ID string `json:"ID,omitempty"`
+	// AllowedOrigin lists browser origins permitted by this CORS rule.
 	AllowedOrigin []string `json:"AllowedOrigin"`
+	// AllowedMethod lists HTTP methods permitted by this CORS rule.
 	AllowedMethod []string `json:"AllowedMethod"`
+	// AllowedHeader lists request headers permitted by this CORS rule.
 	AllowedHeader []string `json:"AllowedHeader,omitempty"`
-	ExposeHeader  []string `json:"ExposeHeader,omitempty"`
-	MaxAgeSeconds int      `json:"MaxAgeSeconds,omitempty"`
+	// ExposeHeader lists response headers browsers may read.
+	ExposeHeader []string `json:"ExposeHeader,omitempty"`
+	// MaxAgeSeconds sets the browser preflight cache lifetime in seconds.
+	MaxAgeSeconds int `json:"MaxAgeSeconds,omitempty"`
 }
 
 // ensureCORS permits the operation's browser origin and retains all other rules.

@@ -1,3 +1,4 @@
+import { CredentialKind } from "./domain";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { ArrowRight } from "lucide-react";
@@ -10,7 +11,7 @@ export function Login({
   /** Replaces session state after successful credential verification. */
   onLogin: (session: Session) => void;
 }) {
-  const [kind, setKind] = useState("admin");
+  const [kind, setKind] = useState<CredentialKind>(CredentialKind.Admin);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // submitLogin verifies the selected Garage credentials and retrieves the resulting session.
@@ -23,7 +24,7 @@ export function Login({
       await request("api/login", {
         method: "POST",
         body: JSON.stringify(
-          kind === "admin"
+          kind === CredentialKind.Admin
             ? { kind, token: data.get("token") }
             : {
                 kind,
@@ -46,10 +47,12 @@ export function Login({
         <Brand className="login-brand" />
         <h1>Sign in to Garage</h1>
         <div className="bucket-tabs" role="tablist" aria-label="Sign-in method">
-          {[
-            ["admin", "Admin token"],
-            ["s3", "S3 credentials"],
-          ].map(([value, label]) => (
+          {(
+            [
+              [CredentialKind.Admin, "Admin token"],
+              [CredentialKind.S3, "S3 credentials"],
+            ] as const
+          ).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -70,7 +73,7 @@ export function Login({
           </div>
         )}
         <form key={kind} onSubmit={submitLogin}>
-          {kind === "admin" ? (
+          {kind === CredentialKind.Admin ? (
             <label>
               Admin token
               <input
@@ -98,7 +101,7 @@ export function Login({
             </>
           )}
           <p className="settings-note">
-            {kind === "admin"
+            {kind === CredentialKind.Admin
               ? "Use a Garage admin token. Its scopes determine your access."
               : "Use an S3 key to browse its accessible buckets. Garage enforces read and write permissions."}
           </p>

@@ -1,16 +1,20 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/containeroo/garage-webui/internal/credential"
+)
 
 // Verify validates exactly one supported Garage credential kind.
 func (s *Service) Verify(ctx context.Context, c Credential) (Identity, error) {
 	switch c.Kind {
-	case "admin":
+	case credential.Admin:
 		if !validAdminCredential(c) {
 			return Identity{}, ErrUnauthenticated
 		}
 		return s.Admin(ctx, c.Token)
-	case "s3":
+	case credential.S3:
 		if !validS3Credential(c) {
 			return Identity{}, ErrUnauthenticated
 		}

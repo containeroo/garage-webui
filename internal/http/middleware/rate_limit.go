@@ -12,6 +12,7 @@ import (
 
 // LoginLimiter authorizes login attempts across application replicas.
 type LoginLimiter interface {
+	// AllowLogin records a login attempt and reports whether the peer remains within its budget.
 	AllowLogin(context.Context, string) (bool, error)
 }
 

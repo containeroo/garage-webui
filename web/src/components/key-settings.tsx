@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import { errorMessage } from "../api";
 import { useCallback, useEffect, useState } from "react";
 import { Save } from "lucide-react";
@@ -67,7 +68,7 @@ export function KeySettings({
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       const result = await get<KeyDetails>(
-        "GetKeyInfo",
+        AdminOperation.GetKeyInfo,
         `?id=${encodeURIComponent(keyId)}`,
         { signal },
       );
@@ -102,7 +103,7 @@ export function KeySettings({
         throw new Error("select a valid expiration date");
       const current = details?.permissions.createBucket || false;
       await post(
-        "UpdateKey",
+        AdminOperation.UpdateKey,
         {
           name: name.trim(),
           ...(never
@@ -132,11 +133,14 @@ export function KeySettings({
     setBusy(true);
     setError("");
     try {
-      await post(enabled ? "AllowBucketKey" : "DenyBucketKey", {
-        bucketId: bucket.id,
-        accessKeyId: keyId,
-        permissions: { [permission]: true },
-      });
+      await post(
+        enabled ? AdminOperation.AllowBucketKey : AdminOperation.DenyBucketKey,
+        {
+          bucketId: bucket.id,
+          accessKeyId: keyId,
+          permissions: { [permission]: true },
+        },
+      );
       await refresh();
       onChanged();
     } catch (cause) {
@@ -178,7 +182,7 @@ export function KeySettings({
                 Name
                 <input
                   value={name}
-                  disabled={busy || !allows(session, "UpdateKey")}
+                  disabled={busy || !allows(session, AdminOperation.UpdateKey)}
                   onChange={(event) => setName(event.target.value)}
                 />
               </label>
@@ -191,7 +195,9 @@ export function KeySettings({
                   <input
                     type="checkbox"
                     checked={never}
-                    disabled={busy || !allows(session, "UpdateKey")}
+                    disabled={
+                      busy || !allows(session, AdminOperation.UpdateKey)
+                    }
                     onChange={(event) => setNever(event.target.checked)}
                   />
                   Never expires
@@ -201,7 +207,9 @@ export function KeySettings({
                     aria-label="Expiration (local time)"
                     type="datetime-local"
                     value={expiration}
-                    disabled={busy || !allows(session, "UpdateKey")}
+                    disabled={
+                      busy || !allows(session, AdminOperation.UpdateKey)
+                    }
                     onChange={(event) => setExpiration(event.target.value)}
                   />
                 )}
@@ -211,7 +219,7 @@ export function KeySettings({
               <input
                 type="checkbox"
                 checked={createBucket}
-                disabled={busy || !allows(session, "UpdateKey")}
+                disabled={busy || !allows(session, AdminOperation.UpdateKey)}
                 onChange={(event) => setCreateBucket(event.target.checked)}
               />
               <span>
@@ -223,7 +231,11 @@ export function KeySettings({
               <button
                 type="button"
                 className="primary"
-                disabled={busy || !name.trim() || !allows(session, "UpdateKey")}
+                disabled={
+                  busy ||
+                  !name.trim() ||
+                  !allows(session, AdminOperation.UpdateKey)
+                }
                 onClick={() => void save()}
               >
                 <Save size={15} /> {busy ? "Saving…" : "Save key"}
@@ -265,8 +277,8 @@ export function KeySettings({
                             !allows(
                               session,
                               bucket.permissions[permission]
-                                ? "DenyBucketKey"
-                                : "AllowBucketKey",
+                                ? AdminOperation.DenyBucketKey
+                                : AdminOperation.AllowBucketKey,
                             )
                           }
                           aria-label={`${permission} ${bucket.globalAliases?.[0] || bucket.id}`}

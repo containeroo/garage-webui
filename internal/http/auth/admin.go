@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 )
 
@@ -28,12 +29,12 @@ func (s *Service) Admin(ctx context.Context, token string) (Identity, error) {
 		return Identity{}, ErrUnauthenticated
 	}
 
-	return Identity{Credential: Credential{Kind: "admin", Token: token}, User: info.Name, Scope: info.Scope}, nil
+	return Identity{Credential: Credential{Kind: credential.Admin, Token: token}, User: info.Name, Scope: info.Scope}, nil
 }
 
 // AdminClient constructs a client using the session's Garage token.
 func (s *Service) AdminClient(id Identity) (*admin.Client, error) {
-	if id.Credential.Kind != "admin" {
+	if id.Credential.Kind != credential.Admin {
 		return nil, ErrUnauthenticated
 	}
 

@@ -19,12 +19,18 @@ import (
 // Store owns a single-connection SQLite database and per-bucket provisioning locks.
 // A process lock prevents multiple instances from provisioning keys against the same file.
 type Store struct {
-	db          *sql.DB
+	// db provides the SQLite database connection.
+	db *sql.DB
+	// processLock prevents concurrent processes from opening the database file.
 	processLock *flock.Flock
-	logger      *slog.Logger
-	mu          sync.Mutex
-	buckets     map[string]*bucketGate
-	closeOnce   sync.Once
+	// logger records application diagnostics.
+	logger *slog.Logger
+	// mu protects bucket gate ownership and reference counts.
+	mu sync.Mutex
+	// buckets tracks provisioning gates for active bucket operations.
+	buckets map[string]*bucketGate
+	// closeOnce ensures database resources are closed only once.
+	closeOnce sync.Once
 }
 
 // Open creates or reopens a persistent SQLite database and applies its schema.

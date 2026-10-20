@@ -1,3 +1,4 @@
+import { UploadStatus } from "../domain";
 import { errorMessage } from "../api";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { CircleAlert, LoaderCircle, UploadCloud, X } from "lucide-react";
@@ -13,7 +14,7 @@ type QueuedFile = {
   /** Complete object key, including any folder prefix. */
   key: string;
   /** Current health or transfer state. */
-  status: "pending" | "uploading" | "done" | "failed";
+  status: UploadStatus;
   /** Failure message suitable for displaying beside the affected action. */
   error?: string;
 };
@@ -85,7 +86,7 @@ export function UploadDialog({
       ...selected.map((file) => ({
         file,
         key: file.name,
-        status: "pending" as const,
+        status: UploadStatus.Pending,
       })),
     ]);
     setError("");
@@ -108,7 +109,9 @@ export function UploadDialog({
     if (
       controller.current ||
       !queue.some(
-        (entry) => entry.status === "pending" || entry.status === "failed",
+        (entry) =>
+          entry.status === UploadStatus.Pending ||
+          entry.status === UploadStatus.Failed,
       )
     )
       return;
@@ -128,8 +131,12 @@ export function UploadDialog({
     for (let i = 0; i < pending.length; i++) {
       const entry = pending[i];
       if (current.signal.aborted) break;
-      if (entry.status === "done") continue;
-      pending[i] = { ...entry, status: "uploading", error: undefined };
+      if (entry.status === UploadStatus.Done) continue;
+      pending[i] = {
+        ...entry,
+        status: UploadStatus.Uploading,
+        error: undefined,
+      };
       setQueue([...pending]);
       const started = performance.now();
       setProgress({ loaded: 0, total: entry.file.size, speed: 0, eta: null });
@@ -153,12 +160,12 @@ export function UploadDialog({
             });
           },
         );
-        pending[i] = { ...entry, status: "done" };
+        pending[i] = { ...entry, status: UploadStatus.Done };
         anyUploaded = true;
       } catch (cause) {
         pending[i] = {
           ...entry,
-          status: "failed",
+          status: UploadStatus.Failed,
           error: errorMessage(cause),
         };
         setQueue([...pending]);
@@ -172,8 +179,12 @@ export function UploadDialog({
     if (anyUploaded) onUploaded();
   }
 
-  const completed = queue.filter((entry) => entry.status === "done").length;
-  const current = queue.find((entry) => entry.status === "uploading");
+  const completed = queue.filter(
+    (entry) => entry.status === UploadStatus.Done,
+  ).length;
+  const current = queue.find(
+    (entry) => entry.status === UploadStatus.Uploading,
+  );
   const percentage = progress.total
     ? Math.round((progress.loaded / progress.total) * 100)
     : 0;
@@ -244,7 +255,7 @@ export function UploadDialog({
                     <small className="object-error">{entry.error}</small>
                   )}
                 </div>
-                {!busy && entry.status !== "done" && (
+                {!busy && entry.status !== UploadStatus.Done && (
                   <button
                     type="button"
                     className="icon-button"
@@ -299,7 +310,9 @@ export function UploadDialog({
           </Button>
           <Button
             type="button"
-            disabled={busy || !queue.some((entry) => entry.status !== "done")}
+            disabled={
+              busy || !queue.some((entry) => entry.status !== UploadStatus.Done)
+            }
             onClick={() => void start()}
           >
             <UploadCloud size={16} /> Upload{" "}

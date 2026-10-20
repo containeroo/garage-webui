@@ -17,9 +17,13 @@ import (
 
 // Application owns initialized services and HTTP handlers.
 type Application struct {
-	db          storage.Store
-	server      *server.Server
+	// db provides persistent application storage.
+	db storage.Store
+	// server serves the application HTTP endpoints.
+	server *server.Server
+	// stopCleanup cancels background authentication cleanup.
 	stopCleanup context.CancelFunc
+	// cleanupDone tracks background cleanup shutdown.
 	cleanupDone sync.WaitGroup
 }
 

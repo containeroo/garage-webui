@@ -6,17 +6,23 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
 
 // Session returns public credential metadata without exposing its secret.
 func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc {
+	// sessionResponse describes the authenticated session without exposing its secrets.
 	type sessionResponse struct {
-		Mode           string   `json:"mode"`
-		User           string   `json:"user"`
-		Scope          []string `json:"scope"`
-		UploadsEnabled bool     `json:"uploadsEnabled"`
+		// Mode identifies the session credential mechanism.
+		Mode credential.Kind `json:"mode"`
+		// User contains the session display name.
+		User string `json:"user"`
+		// Scope lists the allowed admin operations.
+		Scope []string `json:"scope"`
+		// UploadsEnabled reports whether uploads are available to this session.
+		UploadsEnabled bool `json:"uploadsEnabled"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := authentication.Authenticate(r)

@@ -1,3 +1,5 @@
+import { AdminOperation } from "./admin-operation";
+import { BucketTab, CredentialKind } from "./domain";
 import type { FormEvent } from "react";
 import { errorMessage } from "./api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -111,7 +113,7 @@ function Workspace({
   const { confirm } = useQuestions();
   const theme = useTheme();
   const [page, setPage] = useState<WorkspacePage>(
-    session.mode === "admin" ? "overview" : "buckets",
+    session.mode === CredentialKind.Admin ? "overview" : "buckets",
   );
   const [usageTotals, setUsageTotals] = useState<{
     /** Total stored object bytes. */
@@ -137,9 +139,7 @@ function Workspace({
   const busy = loading || mutating;
   const [modal, setModal] = useState<"bucket" | "key" | "grant" | null>(null);
   const [details, setDetails] = useState<BucketDetails>();
-  const [bucketTab, setBucketTab] = useState<
-    "overview" | "permissions" | "browse"
-  >("overview");
+  const [bucketTab, setBucketTab] = useState<BucketTab>(BucketTab.Overview);
   const [createdKey, setCreatedKey] = useState("");
   const [uploadBucket, setUploadBucket] = useState<BucketDetails>();
   const [objectsVersion, setObjectsVersion] = useState(0);
@@ -176,16 +176,16 @@ function Workspace({
   /** showBucket loads the latest selected bucket and ignores cancelled detail requests. */
   async function showBucket(
     bucket: Bucket,
-    tab: "overview" | "permissions" | "browse" = "overview",
+    tab: BucketTab = BucketTab.Overview,
   ) {
     bucketRequest.current?.abort();
     const controller = new AbortController();
     bucketRequest.current = controller;
     setUploadPrefix("");
-    setBucketTab(session.mode === "s3" ? "browse" : tab);
+    setBucketTab(session.mode === CredentialKind.S3 ? BucketTab.Browse : tab);
     try {
       const bucketDetails = await get<BucketDetails>(
-        "GetBucketInfo",
+        AdminOperation.GetBucketInfo,
         `?id=${encodeURIComponent(bucket.id)}`,
         { signal: controller.signal },
       );
@@ -203,7 +203,13 @@ function Workspace({
     )
       return;
     const deleted = await run(() =>
-      post(`Delete${kind}`, {}, `?id=${encodeURIComponent(id)}`),
+      post(
+        kind === "Bucket"
+          ? AdminOperation.DeleteBucket
+          : AdminOperation.DeleteKey,
+        {},
+        `?id=${encodeURIComponent(id)}`,
+      ),
     );
     if (deleted && kind === "Bucket") setDetails(undefined);
   }
@@ -212,17 +218,19 @@ function Workspace({
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     if (modal === "bucket")
-      await run(() => post("CreateBucket", { globalAlias: data.get("name") }));
+      await run(() =>
+        post(AdminOperation.CreateBucket, { globalAlias: data.get("name") }),
+      );
     if (modal === "key")
       await run(async () => {
-        const result = await post<unknown>("CreateKey", {
+        const result = await post<unknown>(AdminOperation.CreateKey, {
           name: data.get("name"),
         });
         setCreatedKey(JSON.stringify(result, null, 2));
       });
     if (modal === "grant" && details) {
       await run(async () => {
-        await post("AllowBucketKey", {
+        await post(AdminOperation.AllowBucketKey, {
           bucketId: details.id,
           accessKeyId: data.get("key"),
           permissions: {
@@ -233,7 +241,7 @@ function Workspace({
         });
         setDetails(
           await get<BucketDetails>(
-            "GetBucketInfo",
+            AdminOperation.GetBucketInfo,
             `?id=${encodeURIComponent(details.id)}`,
           ),
         );
@@ -286,7 +294,9 @@ function Workspace({
               {(page === "buckets" || page === "keys") &&
                 allows(
                   session,
-                  page === "keys" ? "CreateKey" : "CreateBucket",
+                  page === "keys"
+                    ? AdminOperation.CreateKey
+                    : AdminOperation.CreateBucket,
                 ) && (
                   <Button
                     onClick={() =>
@@ -406,7 +416,7 @@ function Workspace({
                     </div>
                   </div>
                   <BucketRows
-                    browseOnly={session.mode === "s3"}
+                    browseOnly={session.mode === CredentialKind.S3}
                     buckets={buckets}
                     onSelect={showBucket}
                     loaded={bucketsLoaded}
@@ -464,19 +474,23 @@ function Workspace({
                           >
                             {key.expired ? "Expired" : "Active"}
                           </span>
-                          {session.mode === "admin" && (
+                          {session.mode === CredentialKind.Admin && (
                             <div className="key-actions">
                               <button
                                 type="button"
                                 className="secondary"
-                                disabled={!allows(session, "GetKeyInfo")}
+                                disabled={
+                                  !allows(session, AdminOperation.GetKeyInfo)
+                                }
                                 onClick={() => setEditingKey(key.id)}
                               >
                                 Edit
                               </button>
                               <button
                                 className="icon-button danger"
-                                disabled={!allows(session, "DeleteKey")}
+                                disabled={
+                                  !allows(session, AdminOperation.DeleteKey)
+                                }
                                 title="Delete key"
                                 onClick={() => remove("Key", key.id, key.name)}
                               >
@@ -524,12 +538,16 @@ function Workspace({
               >
                 {(
                   [
-                    ["overview", "Overview"],
-                    ["permissions", "Permissions"],
-                    ["browse", "Browse"],
+                    [BucketTab.Overview, "Overview"],
+                    [BucketTab.Permissions, "Permissions"],
+                    [BucketTab.Browse, "Browse"],
                   ] as const
                 )
-                  .filter(([id]) => session.mode === "admin" || id === "browse")
+                  .filter(
+                    ([id]) =>
+                      session.mode === CredentialKind.Admin ||
+                      id === BucketTab.Browse,
+                  )
                   .map(([id, label]) => (
                     <button
                       role="tab"
@@ -542,7 +560,7 @@ function Workspace({
                     </button>
                   ))}
               </div>
-              {bucketTab === "browse" && (
+              {bucketTab === BucketTab.Browse && (
                 <BucketObjects
                   key={details.id}
                   bucketId={details.id}
@@ -553,7 +571,7 @@ function Workspace({
                   onUpload={() => setUploadBucket(details)}
                 />
               )}
-              {bucketTab === "overview" && (
+              {bucketTab === BucketTab.Overview && (
                 <BucketSettings
                   key={details.id}
                   bucket={details}
@@ -564,7 +582,7 @@ function Workspace({
                   }}
                 />
               )}
-              {bucketTab === "permissions" && (
+              {bucketTab === BucketTab.Permissions && (
                 <BucketPermissions
                   key={details.id}
                   bucket={details}
@@ -574,20 +592,21 @@ function Workspace({
                   onAddAccess={() => setModal("grant")}
                 />
               )}
-              {bucketTab === "overview" && allows(session, "DeleteBucket") && (
-                <button
-                  className="delete-bucket"
-                  onClick={() =>
-                    remove(
-                      "Bucket",
-                      details.id,
-                      details.globalAliases?.[0] || details.id,
-                    )
-                  }
-                >
-                  <Trash2 size={16} /> Delete bucket
-                </button>
-              )}
+              {bucketTab === BucketTab.Overview &&
+                allows(session, AdminOperation.DeleteBucket) && (
+                  <button
+                    className="delete-bucket"
+                    onClick={() =>
+                      remove(
+                        "Bucket",
+                        details.id,
+                        details.globalAliases?.[0] || details.id,
+                      )
+                    }
+                  >
+                    <Trash2 size={16} /> Delete bucket
+                  </button>
+                )}
             </section>
           )}
         </div>

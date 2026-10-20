@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import type { Grant } from "../api";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -47,7 +48,7 @@ export function BucketPermissions({
       await action();
       onChanged(
         await get<BucketDetails>(
-          "GetBucketInfo",
+          AdminOperation.GetBucketInfo,
           `?id=${encodeURIComponent(bucket.id)}`,
         ),
       );
@@ -64,15 +65,18 @@ export function BucketPermissions({
     enabled: boolean,
   ) {
     await run(async () => {
-      await post(enabled ? "AllowBucketKey" : "DenyBucketKey", {
-        bucketId: bucket.id,
-        accessKeyId: grant.accessKeyId,
-        permissions: {
-          read: permission === "read",
-          write: permission === "write",
-          owner: permission === "owner",
+      await post(
+        enabled ? AdminOperation.AllowBucketKey : AdminOperation.DenyBucketKey,
+        {
+          bucketId: bucket.id,
+          accessKeyId: grant.accessKeyId,
+          permissions: {
+            read: permission === "read",
+            write: permission === "write",
+            owner: permission === "owner",
+          },
         },
-      });
+      );
     });
   }
 
@@ -80,7 +84,7 @@ export function BucketPermissions({
   async function revokeGrant(grant: Grant) {
     if (!(await confirm("Remove all permissions for this key?"))) return;
     await run(async () => {
-      await post("DenyBucketKey", {
+      await post(AdminOperation.DenyBucketKey, {
         bucketId: bucket.id,
         accessKeyId: grant.accessKeyId,
         permissions: {
@@ -104,7 +108,7 @@ export function BucketPermissions({
           <div>
             <h3>Access permissions</h3>
           </div>
-          {allows(session, "AllowBucketKey") && (
+          {allows(session, AdminOperation.AllowBucketKey) && (
             <button className="secondary" disabled={busy} onClick={onAddAccess}>
               <Plus size={15} /> Add access
             </button>
@@ -134,8 +138,8 @@ export function BucketPermissions({
                         !allows(
                           session,
                           grant.permissions[permission]
-                            ? "DenyBucketKey"
-                            : "AllowBucketKey",
+                            ? AdminOperation.DenyBucketKey
+                            : AdminOperation.AllowBucketKey,
                         ) || busy
                       }
                       onChange={(event) =>
@@ -150,7 +154,7 @@ export function BucketPermissions({
                   </label>
                 ))}
               </div>
-              {allows(session, "DenyBucketKey") && (
+              {allows(session, AdminOperation.DenyBucketKey) && (
                 <button
                   className="icon-button danger"
                   title="Remove access"

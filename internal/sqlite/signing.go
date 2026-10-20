@@ -15,16 +15,24 @@ import (
 
 // bucketGate tracks holders and waiters without holding a SQLite transaction over Garage calls.
 type bucketGate struct {
-	token      chan struct{}
+	// token provides the single permit for this bucket gate.
+	token chan struct{}
+	// references counts the holders and waiters using this gate.
 	references int
 }
 
+// bucketLock owns an acquired bucket provisioning lock until release.
 type bucketLock struct {
-	store    *Store
+	// store owns the database and per-bucket gates.
+	store *Store
+	// bucketID identifies the locked bucket.
 	bucketID string
-	gate     *bucketGate
-	once     sync.Once
-	closed   atomic.Bool
+	// gate holds the acquired per-bucket permit.
+	gate *bucketGate
+	// once ensures the lock is released only once.
+	once sync.Once
+	// closed reports whether the lock has been released.
+	closed atomic.Bool
 }
 
 // LockBucket serializes provisioning and deletion for one Garage bucket.

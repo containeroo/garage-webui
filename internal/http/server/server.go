@@ -19,21 +19,33 @@ import (
 
 // ObjectServices prepares credential-scoped S3 operations and bucket deletion.
 type ObjectServices interface {
+	// ForIdentity creates object services scoped to the authenticated identity.
 	ForIdentity(auth.Identity) (*objects.Service, error)
+	// DeleteBucket deletes the requested bucket.
 	DeleteBucket(context.Context, auth.Identity, string) (int, []byte, error)
 }
 
 // Server combines authenticated routes and the static frontend.
 type Server struct {
-	themes       []themes.Theme
-	assets       fs.FS
-	s3Origin     string
-	objects      ObjectServices
-	auth         *auth.Service
-	publicURL    string
-	prefix       string
-	logger       *slog.Logger
-	accessLog    bool
+	// themes lists the available application themes.
+	themes []themes.Theme
+	// assets provides the embedded frontend files.
+	assets fs.FS
+	// s3Origin identifies the S3 origin allowed by browser security policies.
+	s3Origin string
+	// objects provides identity-scoped object operations.
+	objects ObjectServices
+	// auth manages authenticated application sessions.
+	auth *auth.Service
+	// publicURL specifies the browser-facing application URL.
+	publicURL string
+	// prefix specifies the application route prefix.
+	prefix string
+	// logger records application diagnostics.
+	logger *slog.Logger
+	// accessLog enables HTTP access logging.
+	accessLog bool
+	// loginLimiter enforces the login attempt budget.
 	loginLimiter middleware.LoginLimiter
 }
 

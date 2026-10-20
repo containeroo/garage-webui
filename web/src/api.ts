@@ -1,7 +1,9 @@
+import type { AdminOperation } from "./admin-operation";
+import { CredentialKind } from "./domain.ts";
 /** The current Garage credential metadata, excluding credential secrets. */
 export type Session = {
   /** Credential kind; empty for an unauthenticated session. */
-  mode: "admin" | "s3" | "";
+  mode: CredentialKind | "";
   /** Display label returned for the authenticated credential. */
   user: string;
   /** Garage operations permitted by the admin token. */
@@ -10,8 +12,8 @@ export type Session = {
   uploadsEnabled: boolean;
 };
 /** allows checks the credential's Garage admin scopes for a requested operation. */
-export const allows = (session: Session, operation: string) =>
-  session.mode === "admin" &&
+export const allows = (session: Session, operation: AdminOperation) =>
+  session.mode === CredentialKind.Admin &&
   !!(session.scope?.includes("*") || session.scope?.includes(operation));
 /** A Garage bucket summary returned by the list operation. */
 export type Bucket = {
@@ -209,10 +211,10 @@ export async function request<T>(
   return response.json();
 }
 /** get retrieves an authorized Garage operation with optional query and cancellation settings. */
-export const get = <T>(op: string, query = "", options?: RequestInit) =>
+export const get = <T>(op: AdminOperation, query = "", options?: RequestInit) =>
   request<T>(`api/garage/${op}${query}`, options);
 /** post submits a JSON mutation to an authorized Garage operation. */
-export const post = <T>(op: string, data: unknown = {}, query = "") =>
+export const post = <T>(op: AdminOperation, data: unknown = {}, query = "") =>
   request<T>(`api/garage/${op}${query}`, {
     method: "POST",
     body: JSON.stringify(data),

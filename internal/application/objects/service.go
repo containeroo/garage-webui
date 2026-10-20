@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/containeroo/garage-webui/internal/credential"
+	"github.com/containeroo/garage-webui/internal/objectaction"
 )
 
 const maxUploadSize int64 = 5 << 30
@@ -20,13 +23,16 @@ var (
 
 // BucketResolver resolves a trusted bucket ID and global alias.
 type BucketResolver interface {
+	// ResolveBucket resolves a bucket reference into its identifier and usable alias.
 	ResolveBucket(context.Context, string) (bucketID, alias string, err error)
 }
 
 // Service authorizes and prepares object operations.
 type Service struct {
+	// buckets resolves and authorizes bucket references.
 	buckets BucketResolver
-	signer  Signer
+	// signer creates signed requests for validated object operations.
+	signer Signer
 }
 
 // New creates the object operation service.
@@ -39,14 +45,22 @@ func New(buckets BucketResolver, signer Signer) *Service {
 
 // Signer prepares bucket-scoped object operations.
 type Signer interface {
+	// ListPrefixURL signs a paginated object listing for a prefix.
 	ListPrefixURL(context.Context, string, string, string, string, time.Time) (string, error)
+	// DownloadURL signs an object download.
 	DownloadURL(context.Context, string, string, string, time.Time) (string, error)
+	// PreviewURL signs an inline object preview.
 	PreviewURL(context.Context, string, string, string, time.Time) (string, error)
+	// DeleteURL signs an object deletion.
 	DeleteURL(context.Context, string, string, string, time.Time) (string, error)
+	// UploadURL signs an object upload.
 	UploadURL(context.Context, string, string, string, time.Time) (string, error)
+	// CopyURL signs an object copy and returns its source header.
 	CopyURL(context.Context, string, string, string, string, time.Time) (signedURL, copySource string, err error)
-	MultipartURL(context.Context, string, string, string, string, string, int, time.Time) (string, error)
-	CopyMultipartURL(context.Context, string, string, string, string, string, string, int, int64, int64, time.Time) (signedURL string, requiredHeaders map[string]string, err error)
+	// MultipartURL signs a multipart upload operation.
+	MultipartURL(context.Context, string, string, string, string, objectaction.Action, int, time.Time) (string, error)
+	// CopyMultipartURL signs a multipart copy operation and returns its required headers.
+	CopyMultipartURL(context.Context, string, string, string, string, string, objectaction.Action, int, int64, int64, time.Time) (signedURL string, requiredHeaders map[string]string, err error)
 }
 
 // Request identifies an object operation and its parameters.
@@ -54,7 +68,7 @@ type Request struct {
 	// BucketID identifies the selected Garage bucket.
 	BucketID string
 	// Action identifies the requested operation.
-	Action string
+	Action objectaction.Action
 	// Key identifies the target object.
 	Key string
 	// Continuation is the listing cursor.
@@ -88,7 +102,7 @@ type Result struct {
 // Prepare authorizes and signs an object operation.
 func (s *Service) Prepare(
 	ctx context.Context,
-	kind string,
+	kind credential.Kind,
 	input Request,
 	now time.Time,
 ) (Result, error) {
@@ -96,7 +110,7 @@ func (s *Service) Prepare(
 		return Result{}, ErrInvalid
 	}
 
-	if !supportedCredentialKind(kind) {
+	if !kind.Valid() {
 		return Result{}, ErrForbidden
 	}
 
@@ -111,11 +125,12 @@ func (s *Service) Prepare(
 // PrepareUpload authorizes and signs a single-request upload.
 func (s *Service) PrepareUpload(
 	ctx context.Context,
-	kind, bucketID, key string,
+	kind credential.Kind,
+	bucketID, key string,
 	size int64,
 	now time.Time,
 ) (Result, error) {
-	if !supportedCredentialKind(kind) {
+	if !kind.Valid() {
 		return Result{}, ErrForbidden
 	}
 
@@ -144,26 +159,24 @@ func (s *Service) sign(
 	now time.Time,
 ) (Result, error) {
 	signer := s.signer
-	var result Result
+	method, valid := input.Action.Method()
+	if !valid {
+		return Result{}, errors.New("unsupported object operation")
+	}
+	result := Result{Method: method}
 	var err error
 	switch input.Action {
-	case "list":
-		result.Method = http.MethodGet
+	case objectaction.List:
 		result.URL, err = signer.ListPrefixURL(ctx, bucketID, alias, input.Prefix, input.Continuation, now)
-	case "download":
-		result.Method = http.MethodGet
+	case objectaction.Download:
 		result.URL, err = signer.DownloadURL(ctx, bucketID, alias, input.Key, now)
-	case "preview":
-		result.Method = http.MethodGet
+	case objectaction.Preview:
 		result.URL, err = signer.PreviewURL(ctx, bucketID, alias, input.Key, now)
-	case "delete":
-		result.Method = http.MethodDelete
+	case objectaction.Delete:
 		result.URL, err = signer.DeleteURL(ctx, bucketID, alias, input.Key, now)
-	case "copy":
-		result.Method = http.MethodPut
+	case objectaction.Copy:
 		result.URL, result.CopySource, err = signer.CopyURL(ctx, bucketID, alias, input.SourceKey, input.Key, now)
-	case "multipart-start", "multipart-part", "multipart-complete", "multipart-abort":
-		result.Method = multipartMethod(input.Action)
+	case objectaction.MultipartStart, objectaction.MultipartPart, objectaction.MultipartComplete, objectaction.MultipartAbort:
 		result.URL, err = signer.MultipartURL(
 			ctx,
 			bucketID,
@@ -174,8 +187,7 @@ func (s *Service) sign(
 			input.PartNumber,
 			now,
 		)
-	case "multipart-copy-start", "multipart-copy-part", "multipart-copy-complete", "multipart-copy-abort":
-		result.Method = multipartMethod(input.Action)
+	case objectaction.MultipartCopyStart, objectaction.MultipartCopyPart, objectaction.MultipartCopyComplete, objectaction.MultipartCopyAbort:
 		result.URL, result.CopyHeaders, err = signer.CopyMultipartURL(
 			ctx,
 			bucketID,
@@ -195,19 +207,3 @@ func (s *Service) sign(
 
 	return result, err
 }
-
-// multipartMethod maps multipart steps to their S3 methods.
-func multipartMethod(action string) string {
-	switch action {
-	case "multipart-part", "multipart-copy-part":
-		return http.MethodPut
-	case "multipart-abort", "multipart-copy-abort":
-		return http.MethodDelete
-	default:
-		return http.MethodPost
-	}
-}
-
-// supportedCredentialKind accepts recognized Garage credential types for object operations.
-// Garage checks the individual key permissions when executing each signed S3 request.
-func supportedCredentialKind(kind string) bool { return kind == "admin" || kind == "s3" }

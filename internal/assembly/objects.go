@@ -9,6 +9,8 @@ import (
 
 	"github.com/containeroo/garage-webui/internal/application/buckets"
 	"github.com/containeroo/garage-webui/internal/application/objects"
+	"github.com/containeroo/garage-webui/internal/credential"
+	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/garage/credentials"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/s3"
@@ -17,10 +19,15 @@ import (
 
 // Factory assembles credential-scoped services without relying on HTTP handlers.
 type Factory struct {
-	auth      *auth.Service
-	store     signing.BucketLocker
-	deletion  *buckets.Service
-	cache     *credentials.Cache
+	// auth is used to create admin clients.
+	auth *auth.Service
+	// store is used to create signing keys.
+	store signing.BucketLocker
+	// deletion is used to delete buckets.
+	deletion *buckets.Service
+	// cache is used to cache credentials.
+	cache *credentials.Cache
+	// publicURL is used to create signed URLs.
 	publicURL string
 }
 
@@ -45,7 +52,7 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 	var buckets objects.BucketResolver
 
 	switch id.Credential.Kind {
-	case "admin":
+	case credential.Admin:
 		if !canProvisionObjects(id) {
 			return nil, objects.ErrForbidden
 		}
@@ -55,11 +62,13 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 		}
 		provider = credentials.New(client, f.store, f.publicURL, f.cache, id.Credential.Token)
 		buckets = client
-	case "s3":
-		provider = sessionKeys{credential: signing.Credential{
-			AccessKeyID:     id.Credential.AccessKeyID,
-			SecretAccessKey: id.Credential.SecretAccessKey,
-		}}
+	case credential.S3:
+		provider = sessionKeys{
+			credential: signing.Credential{
+				AccessKeyID:     id.Credential.AccessKeyID,
+				SecretAccessKey: id.Credential.SecretAccessKey,
+			},
+		}
 		buckets = sessionBuckets{auth: f.auth, credential: id.Credential}
 	default:
 		return nil, objects.ErrForbidden
@@ -80,8 +89,13 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 // canProvisionObjects requires every privilege used by managed-key provisioning.
 // In particular, GetKeyInfo alone must never grant access to an existing signing key.
 func canProvisionObjects(id auth.Identity) bool {
-	for _, operation := range []string{
-		"GetBucketInfo", "GetKeyInfo", "CreateKey", "AllowBucketKey", "DenyBucketKey", "UpdateBucket",
+	for _, operation := range []admin.Operation{
+		admin.OpGetBucketInfo,
+		admin.OpGetKeyInfo,
+		admin.OpCreateKey,
+		admin.OpAllowBucketKey,
+		admin.OpDenyBucketKey,
+		admin.OpUpdateBucket,
 	} {
 		if !id.Allows(operation) {
 			return false
@@ -91,8 +105,11 @@ func canProvisionObjects(id auth.Identity) bool {
 	return true
 }
 
+// sessionBuckets restricts bucket names to those visible to the current S3 credential.
 type sessionBuckets struct {
-	auth       *auth.Service
+	// auth is used to resolve bucket names.
+	auth *auth.Service
+	// credential is used to resolve bucket names.
 	credential auth.Credential
 }
 
@@ -110,7 +127,11 @@ func (b sessionBuckets) ResolveBucket(ctx context.Context, name string) (string,
 	return name, name, nil
 }
 
-type sessionKeys struct{ credential signing.Credential }
+// sessionKeys signs with the S3 credential provided by the current session.
+type sessionKeys struct {
+	// credential holds the signing credentials for the current session.
+	credential signing.Credential
+}
 
 // Read signs with the S3 credential provided by the current session.
 func (k sessionKeys) Read(context.Context, string) (signing.Credential, error) {
@@ -150,5 +171,7 @@ func (f *Factory) DeleteBucket(ctx context.Context, id auth.Identity, bucketID s
 
 // canDeleteBucket requires permission to revoke the Web UI's managed signing keys.
 func canDeleteBucket(id auth.Identity) bool {
-	return id.Allows("DeleteBucket") && id.Allows("DeleteKey") && id.Allows("GetBucketInfo")
+	return id.Allows(admin.OpDeleteBucket) &&
+		id.Allows(admin.OpDeleteKey) &&
+		id.Allows(admin.OpGetBucketInfo)
 }

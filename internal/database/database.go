@@ -14,9 +14,11 @@ import (
 
 // Config configures a SQLite file or PostgreSQL database.
 type Config struct {
+	// URL selects the database backend and connection location.
 	URL string
-	// MaxConns and MinIdleConns configure only the PostgreSQL connection pool.
-	MaxConns     int32
+	// MaxConns sets the maximum PostgreSQL connection pool size.
+	MaxConns int32
+	// MinIdleConns sets the minimum idle PostgreSQL connection count.
 	MinIdleConns int32
 }
 

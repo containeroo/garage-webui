@@ -56,9 +56,12 @@ func (e *StatusError) Is(target error) bool {
 
 // Client sends requests to Garage using exactly one signed-in administrator's token.
 type Client struct {
-	base  *url.URL
+	// base holds the parsed Garage Admin API base URL.
+	base *url.URL
+	// token authenticates requests to the Garage Admin API.
 	token string
-	http  *http.Client
+	// http executes outgoing HTTP requests.
+	http *http.Client
 }
 
 const maxResponseBytes = 4 << 20

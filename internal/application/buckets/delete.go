@@ -13,13 +13,17 @@ import (
 
 // AdminClient exposes only the typed Garage operations needed for bucket deletion.
 type AdminClient interface {
+	// GetBucket loads bucket metadata and its assigned keys.
 	GetBucket(context.Context, string) (admin.BucketInfo, error)
+	// DeleteBucket deletes the requested bucket.
 	DeleteBucket(context.Context, string) error
+	// DeleteKey deletes the requested access key.
 	DeleteKey(context.Context, string) error
 }
 
 // Service coordinates bucket deletion with persistent managed signing-key references.
 type Service struct {
+	// store serializes signing-key changes with bucket deletion.
 	store signing.BucketLocker
 }
 

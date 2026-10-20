@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"sort"
@@ -32,10 +33,14 @@ const (
 
 // Presigner creates S3 SigV4 query-authenticated URLs.
 type Presigner struct {
+	// endpoint holds the parsed S3 endpoint URL.
 	endpoint *url.URL
-	region   string
-	keyID    string
-	secret   string
+	// region specifies the S3 signing region.
+	region string
+	// keyID identifies the signing access key.
+	keyID string
+	// secret contains the secret used to sign S3 requests.
+	secret string
 }
 
 // New constructs a presigner with an existing Garage S3 credential.
@@ -68,17 +73,17 @@ func New(rawURL, region, keyID, secret, publicURL string) (*Presigner, error) {
 
 // BucketsURL signs S3 ListBuckets to validate the supplied credentials.
 func (s *Presigner) BucketsURL(now time.Time) (string, error) {
-	return s.signedURL("GET", "/", nil, now)
+	return s.signedURL(http.MethodGet, "/", nil, now)
 }
 
 // UploadURL signs a PUT for one object.
 func (s *Presigner) UploadURL(bucket, key string, now time.Time) (string, error) {
-	return s.objectURL("PUT", bucket, key, nil, now)
+	return s.objectURL(http.MethodPut, bucket, key, nil, now)
 }
 
 // DeleteURL signs a DELETE for one object; the caller must authorize mutations.
 func (s *Presigner) DeleteURL(bucket, key string, now time.Time) (string, error) {
-	return s.objectURL("DELETE", bucket, key, nil, now)
+	return s.objectURL(http.MethodDelete, bucket, key, nil, now)
 }
 
 // DownloadURL signs a GET that returns the selected object as an attachment.
@@ -86,17 +91,17 @@ func (s *Presigner) DownloadURL(bucket, key string, now time.Time) (string, erro
 	name := path.Base(key)
 	query := url.Values{"response-content-disposition": {"attachment; filename*=UTF-8''" + strings.ReplaceAll(url.PathEscape(name), "+", "%2B")}}
 
-	return s.objectURL("GET", bucket, key, query, now)
+	return s.objectURL(http.MethodGet, bucket, key, query, now)
 }
 
 // PreviewURL signs an inline GET for an object without a download override.
 func (s *Presigner) PreviewURL(bucket, key string, now time.Time) (string, error) {
-	return s.objectURL("GET", bucket, key, nil, now)
+	return s.objectURL(http.MethodGet, bucket, key, nil, now)
 }
 
 // BeginMultipartURL signs the create-multipart-upload request.
 func (s *Presigner) BeginMultipartURL(bucket, key string, now time.Time) (string, error) {
-	return s.objectURL("POST", bucket, key, url.Values{"uploads": {""}}, now)
+	return s.objectURL(http.MethodPost, bucket, key, url.Values{"uploads": {""}}, now)
 }
 
 // PartURL signs a single part; signing is repeated throughout a long upload.
@@ -105,7 +110,7 @@ func (s *Presigner) PartURL(bucket, key, uploadID string, part int, now time.Tim
 		return "", errors.New("invalid multipart upload ID or part number")
 	}
 
-	return s.objectURL("PUT", bucket, key, url.Values{
+	return s.objectURL(http.MethodPut, bucket, key, url.Values{
 		"uploadId":   {uploadID},
 		"partNumber": {strconv.Itoa(part)},
 	}, now)
@@ -113,12 +118,12 @@ func (s *Presigner) PartURL(bucket, key, uploadID string, part int, now time.Tim
 
 // CompleteMultipartURL signs completion for the selected upload.
 func (s *Presigner) CompleteMultipartURL(bucket, key, uploadID string, now time.Time) (string, error) {
-	return s.multipartURL("POST", bucket, key, uploadID, now)
+	return s.multipartURL(http.MethodPost, bucket, key, uploadID, now)
 }
 
 // AbortMultipartURL signs cancellation of the selected upload.
 func (s *Presigner) AbortMultipartURL(bucket, key, uploadID string, now time.Time) (string, error) {
-	return s.multipartURL("DELETE", bucket, key, uploadID, now)
+	return s.multipartURL(http.MethodDelete, bucket, key, uploadID, now)
 }
 
 // multipartURL binds upload ID, bucket, and object key to the signature.
@@ -138,7 +143,7 @@ func (s *Presigner) CopyURL(bucket, source, target string, now time.Time) (signe
 	}
 
 	header := (&url.URL{Path: "/" + bucket + "/" + source}).EscapedPath()
-	address, err := s.signedWithHeaders("PUT", "/"+bucket+"/"+target, nil, map[string]string{"x-amz-copy-source": header}, now)
+	address, err := s.signedWithHeaders(http.MethodPut, "/"+bucket+"/"+target, nil, map[string]string{"x-amz-copy-source": header}, now)
 
 	return address, header, err
 }
@@ -161,7 +166,7 @@ func (s *Presigner) CopyPartURL(bucket, source, target, uploadID string, part in
 		"uploadId":   {uploadID},
 		"partNumber": {strconv.Itoa(part)},
 	}
-	address, err := s.signedWithHeaders("PUT", "/"+bucket+"/"+target, query, headers, now)
+	address, err := s.signedWithHeaders(http.MethodPut, "/"+bucket+"/"+target, query, headers, now)
 
 	return address, headers, err
 }
@@ -196,7 +201,7 @@ func (s *Presigner) ListPrefixURL(bucket, prefix, continuation string, now time.
 		query.Set("prefix", prefix)
 	}
 
-	return s.signedURL("GET", "/"+bucket, query, now)
+	return s.signedURL(http.MethodGet, "/"+bucket, query, now)
 }
 
 // objectURL checks object scoping before signing a request.

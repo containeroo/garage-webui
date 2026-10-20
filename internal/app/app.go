@@ -29,7 +29,6 @@ func Run(
 			fmt.Fprint(stdout, err.Error()) // nolint:errcheck
 			return nil
 		}
-
 		fmt.Fprintln(stderr, err) // nolint:errcheck
 
 		return err

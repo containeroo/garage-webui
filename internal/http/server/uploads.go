@@ -16,10 +16,14 @@ import (
 // PresignUpload authorizes Garage credentials and issues a short-lived, object-scoped URL.
 // Only metadata passes through the backend; file bytes go directly to the S3 API.
 func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.HandlerFunc {
+	// presignUploadResponse describes a signed object upload request.
 	type presignUploadResponse struct {
-		URL       string `json:"url"`
-		Method    string `json:"method"`
-		ExpiresIn int    `json:"expiresIn"`
+		// URL contains the signed request URL.
+		URL string `json:"url"`
+		// Method specifies the HTTP method for the signed request.
+		Method string `json:"method"`
+		// ExpiresIn specifies the signed request lifetime in seconds.
+		ExpiresIn int `json:"expiresIn"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := middleware.RequestIdentity(r)
@@ -36,10 +40,14 @@ func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.Hand
 			return
 		}
 
+		// input identifies the upload target and declared object size.
 		var input struct {
+			// BucketID identifies the target bucket.
 			BucketID string `json:"bucketId"`
-			Key      string `json:"key"`
-			Size     int64  `json:"size"`
+			// Key identifies the destination object.
+			Key string `json:"key"`
+			// Size specifies the object size in bytes.
+			Size int64 `json:"size"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 		decoder.DisallowUnknownFields()

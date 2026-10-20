@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import type { FormEvent } from "react";
 import { useQuestions } from "./ui/questions";
 import { Activity, HardDrive, Network, ShieldCheck } from "lucide-react";
@@ -131,11 +132,11 @@ export function Cluster({
   /** refresh retrieves the current view's authoritative data before updating its state. */
   const refresh = useCallback(async () => {
     const [statusResult, layoutResult] = await Promise.allSettled([
-      allows(session, "GetClusterStatus")
-        ? get<ClusterStatus>("GetClusterStatus")
+      allows(session, AdminOperation.GetClusterStatus)
+        ? get<ClusterStatus>(AdminOperation.GetClusterStatus)
         : Promise.resolve(undefined),
-      allows(session, "GetClusterLayout")
-        ? get<ClusterLayout>("GetClusterLayout")
+      allows(session, AdminOperation.GetClusterLayout)
+        ? get<ClusterLayout>(AdminOperation.GetClusterLayout)
         : Promise.resolve(undefined),
     ]);
     if (statusResult.status === "fulfilled") setStatus(statusResult.value);
@@ -195,7 +196,7 @@ export function Cluster({
           /** Failure message suitable for displaying beside the affected action. */
           error?: string;
         }[]
-      >("ConnectClusterNodes", [address.trim()]);
+      >(AdminOperation.ConnectClusterNodes, [address.trim()]);
       if (!result[0]?.success)
         throw new Error(result[0]?.error || "Connection failed");
       setAddress("");
@@ -216,7 +217,7 @@ export function Cluster({
       return;
     }
     void action(async () => {
-      await post("UpdateClusterLayout", {
+      await post(AdminOperation.UpdateClusterLayout, {
         parameters: { zoneRedundancy: value },
       });
       setPreview(undefined);
@@ -236,7 +237,7 @@ export function Cluster({
       )
     )
       void action(async () => {
-        await post("ApplyClusterLayout", {
+        await post(AdminOperation.ApplyClusterLayout, {
           version: layout.version + 1,
         });
         setPreview(undefined);
@@ -251,7 +252,7 @@ export function Cluster({
     setBusy(true);
     setRemoveError("");
     try {
-      await post("UpdateClusterLayout", {
+      await post(AdminOperation.UpdateClusterLayout, {
         roles: [{ id: removing.id, remove: true }],
       });
       setRemoving(undefined);
@@ -286,7 +287,7 @@ export function Cluster({
     setBusy(true);
     void (async () => {
       try {
-        await post("UpdateClusterLayout", {
+        await post(AdminOperation.UpdateClusterLayout, {
           roles: [
             {
               id: editing.id,
@@ -394,7 +395,7 @@ export function Cluster({
         <div className="panel-head">
           <h2>Nodes</h2>
         </div>
-        {allows(session, "ConnectClusterNodes") && (
+        {allows(session, AdminOperation.ConnectClusterNodes) && (
           <form className="cluster-connect" onSubmit={connectNode}>
             <label>
               Connect a node{" "}
@@ -448,7 +449,7 @@ export function Cluster({
                     </span>
                   </td>
                   <td>
-                    {allows(session, "UpdateClusterLayout") && (
+                    {allows(session, AdminOperation.UpdateClusterLayout) && (
                       <span className="cluster-node-actions">
                         <button
                           className="text-button"
@@ -506,7 +507,7 @@ export function Cluster({
                 </>
               )}
             </p>
-            {allows(session, "UpdateClusterLayout") && (
+            {allows(session, AdminOperation.UpdateClusterLayout) && (
               <form className="layout-settings" onSubmit={stageRedundancy}>
                 <label>
                   Zone redundancy{" "}
@@ -560,19 +561,23 @@ export function Cluster({
                   <li>Layout parameters changed</li>
                 )}
               </ul>
-              {(allows(session, "PreviewClusterLayoutChanges") ||
-                allows(session, "ApplyClusterLayout") ||
-                allows(session, "RevertClusterLayout")) && (
+              {(allows(session, AdminOperation.PreviewClusterLayoutChanges) ||
+                allows(session, AdminOperation.ApplyClusterLayout) ||
+                allows(session, AdminOperation.RevertClusterLayout)) && (
                 <div className="cluster-actions">
                   <Button
                     variant="outline"
                     disabled={
-                      busy || !allows(session, "PreviewClusterLayoutChanges")
+                      busy ||
+                      !allows(
+                        session,
+                        AdminOperation.PreviewClusterLayoutChanges,
+                      )
                     }
                     onClick={() =>
                       action(async () => {
                         const p = await post<LayoutPreview>(
-                          "PreviewClusterLayoutChanges",
+                          AdminOperation.PreviewClusterLayoutChanges,
                         );
                         setPreview(p);
                       })
@@ -581,18 +586,24 @@ export function Cluster({
                     Preview
                   </Button>
                   <Button
-                    disabled={busy || !allows(session, "ApplyClusterLayout")}
+                    disabled={
+                      busy ||
+                      !allows(session, AdminOperation.ApplyClusterLayout)
+                    }
                     onClick={applyLayout}
                   >
                     Apply layout
                   </Button>
                   <Button
                     variant="outline"
-                    disabled={busy || !allows(session, "RevertClusterLayout")}
+                    disabled={
+                      busy ||
+                      !allows(session, AdminOperation.RevertClusterLayout)
+                    }
                     onClick={async () => {
                       if (await confirm("Discard all staged layout changes?"))
                         void action(async () => {
-                          await post("RevertClusterLayout");
+                          await post(AdminOperation.RevertClusterLayout);
                           setPreview(undefined);
                         });
                     }}

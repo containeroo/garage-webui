@@ -78,6 +78,7 @@ func (c *Client) BucketByID(ctx context.Context, id string) (Bucket, error) {
 // UpdateBucketCORS updates only CORS rules, retaining unrelated bucket settings.
 func (c *Client) UpdateBucketCORS(ctx context.Context, id string, rules []json.RawMessage) error {
 	return c.request(ctx, OpUpdateBucket, url.Values{"id": {id}}, struct {
+		// CORSRules contains the replacement bucket CORS rules.
 		CORSRules []json.RawMessage `json:"corsRules"`
 	}{CORSRules: rules}, nil)
 }

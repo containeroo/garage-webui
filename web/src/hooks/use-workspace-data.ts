@@ -1,3 +1,5 @@
+import { AdminOperation } from "../admin-operation";
+import { CredentialKind } from "../domain";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   allows,
@@ -31,14 +33,15 @@ export function useWorkspaceData(session: Session) {
     setError("");
 
     const results = await Promise.allSettled([
-      allows(session, "GetClusterHealth")
-        ? get<Health>("GetClusterHealth", "", options)
+      allows(session, AdminOperation.GetClusterHealth)
+        ? get<Health>(AdminOperation.GetClusterHealth, "", options)
         : Promise.resolve(undefined),
-      session.mode === "s3" || allows(session, "ListBuckets")
-        ? get<Bucket[]>("ListBuckets", "", options)
+      session.mode === CredentialKind.S3 ||
+      allows(session, AdminOperation.ListBuckets)
+        ? get<Bucket[]>(AdminOperation.ListBuckets, "", options)
         : Promise.resolve([]),
-      allows(session, "ListKeys")
-        ? get<AccessKey[]>("ListKeys", "", options)
+      allows(session, AdminOperation.ListKeys)
+        ? get<AccessKey[]>(AdminOperation.ListKeys, "", options)
         : Promise.resolve([]),
     ]);
     if (controller.signal.aborted) return;

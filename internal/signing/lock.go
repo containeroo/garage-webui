@@ -31,5 +31,6 @@ type BucketLock interface {
 
 // BucketLocker coordinates signing-key operations across application replicas.
 type BucketLocker interface {
+	// LockBucket acquires an exclusive provisioning lock for the bucket.
 	LockBucket(context.Context, string) (BucketLock, error)
 }

@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import { useEffect, useState } from "react";
 import { get, type Bucket, type BucketDetails } from "../api";
 
@@ -54,7 +55,7 @@ export function useBucketUsage(
             .slice(offset, offset + concurrency)
             .map((bucket) =>
               get<BucketDetails>(
-                "GetBucketInfo",
+                AdminOperation.GetBucketInfo,
                 `?id=${encodeURIComponent(bucket.id)}`,
                 { signal: controller.signal },
               ),

@@ -3,6 +3,7 @@ package objects
 import (
 	"strings"
 
+	"github.com/containeroo/garage-webui/internal/objectaction"
 	"github.com/containeroo/garage-webui/internal/objectpath"
 )
 
@@ -13,21 +14,21 @@ func validObjectRequest(input Request) bool {
 	}
 
 	switch input.Action {
-	case "list":
+	case objectaction.List:
 		return validListRequest(input)
-	case "download", "preview", "delete", "multipart-start":
+	case objectaction.Download, objectaction.Preview, objectaction.Delete, objectaction.MultipartStart:
 		return objectKeyOnly(input)
-	case "copy":
+	case objectaction.Copy:
 		return validCopyRequest(input) && noMultipartParameters(input)
-	case "multipart-part":
+	case objectaction.MultipartPart:
 		return multipartRequest(input) && validPartNumber(input.PartNumber)
-	case "multipart-complete", "multipart-abort":
+	case objectaction.MultipartComplete, objectaction.MultipartAbort:
 		return multipartRequest(input) && input.PartNumber == 0
-	case "multipart-copy-start":
+	case objectaction.MultipartCopyStart:
 		return validCopyRequest(input) && noMultipartParameters(input)
-	case "multipart-copy-part":
+	case objectaction.MultipartCopyPart:
 		return validMultipartCopyPart(input)
-	case "multipart-copy-complete", "multipart-copy-abort":
+	case objectaction.MultipartCopyComplete, objectaction.MultipartCopyAbort:
 		return validCopyRequest(input) &&
 			validMultipartID(input.UploadID) &&
 			input.PartNumber == 0 &&

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/objectaction"
 	"github.com/containeroo/garage-webui/internal/objectpath"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,7 @@ func TestInvalidMultipartDoesNotProvision(t *testing.T) {
 		{"multipart-part", "upload", 10001},
 		{"multipart-complete", "upload", 1},
 	} {
-		_, err := manager.MultipartURL(ctx, "bucket", "alias", "object", input.uploadID, input.action, input.part, now)
+		_, err := manager.MultipartURL(ctx, "bucket", "alias", "object", input.uploadID, objectaction.Action(input.action), input.part, now)
 		require.Error(t, err)
 	}
 
@@ -44,7 +45,7 @@ func TestInvalidMultipartDoesNotProvision(t *testing.T) {
 		{"multipart-copy-part", "upload", 1, 0, MaxUploadSize},
 		{"multipart-copy-complete", "upload", 2, 0, 0},
 	} {
-		_, _, err := manager.CopyMultipartURL(ctx, "bucket", "alias", "source", "target", input.uploadID, input.action, input.part, input.start, input.end, now)
+		_, _, err := manager.CopyMultipartURL(ctx, "bucket", "alias", "source", "target", input.uploadID, objectaction.Action(input.action), input.part, input.start, input.end, now)
 		require.Error(t, err)
 	}
 

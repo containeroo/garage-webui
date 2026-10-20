@@ -1,3 +1,4 @@
+import { CredentialKind } from "./domain";
 import type { ThemePreference } from "./components/theme-picker";
 import type { Session } from "./api";
 /** ProfileSettings displays credential metadata and session-specific appearance settings. */
@@ -22,11 +23,11 @@ export function ProfileSettings({
             <input value={session.user} disabled />
           </label>
           <p className="settings-note">
-            {session.mode === "admin"
+            {session.mode === CredentialKind.Admin
               ? "Garage admin token"
               : "Garage S3 access key"}
           </p>
-          {session.mode === "admin" && (
+          {session.mode === CredentialKind.Admin && (
             <p className="settings-note">
               Allowed operations: {session.scope?.join(", ")}
             </p>

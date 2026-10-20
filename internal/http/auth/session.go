@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/storage"
 )
 
@@ -71,7 +72,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request, c Credential) er
 		return err
 	}
 	// Store only the credential fields for the selected sign-in method.
-	if c.Kind == "admin" {
+	if c.Kind == credential.Admin {
 		c.AccessKeyID = ""
 		c.SecretAccessKey = ""
 	} else {

@@ -46,6 +46,7 @@ func (c *Client) CreateKey(ctx context.Context, name string) (signing.Credential
 	}
 
 	if err := c.request(ctx, OpCreateKey, nil, struct {
+		// Name contains the resource name.
 		Name string `json:"name"`
 	}{Name: name}, &key); err != nil {
 		return signing.Credential{}, err
@@ -71,8 +72,11 @@ func (c *Client) DenyBucketKey(ctx context.Context, bucketID, keyID string, perm
 // bucketPermission sends one typed Garage bucket permission change.
 func (c *Client) bucketPermission(ctx context.Context, op Operation, bucketID, keyID string, permissions BucketPermissions) error {
 	return c.request(ctx, op, nil, struct {
-		BucketID    string            `json:"bucketId"`
-		AccessKeyID string            `json:"accessKeyId"`
+		// BucketID identifies the target bucket.
+		BucketID string `json:"bucketId"`
+		// AccessKeyID identifies the S3 access key.
+		AccessKeyID string `json:"accessKeyId"`
+		// Permissions specifies the bucket permissions assigned to the key.
 		Permissions BucketPermissions `json:"permissions"`
 	}{bucketID, keyID, permissions}, nil)
 }

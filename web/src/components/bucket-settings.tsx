@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import { useQuestions } from "./ui/questions";
 import { errorMessage } from "../api";
 import { useState } from "react";
@@ -34,7 +35,7 @@ export function BucketSettings({
   /** Notifies the owner after authoritative resource data changes. */
   onChanged: (bucket: BucketDetails) => void;
 }) {
-  const canEdit = allows(session, "UpdateBucket");
+  const canEdit = allows(session, AdminOperation.UpdateBucket);
   const { confirm } = useQuestions();
   const [size, setSize] = useState(
     bucket.quotas?.maxSize == null ? "" : String(bucket.quotas.maxSize),
@@ -70,7 +71,7 @@ export function BucketSettings({
       await operation();
       onChanged(
         await get<BucketDetails>(
-          "GetBucketInfo",
+          AdminOperation.GetBucketInfo,
           `?id=${encodeURIComponent(bucket.id)}`,
         ),
       );
@@ -86,7 +87,11 @@ export function BucketSettings({
 
   /** update submits editable configuration fields for the current bucket. */
   function update(fields: Record<string, unknown>) {
-    return post("UpdateBucket", fields, `?id=${encodeURIComponent(bucket.id)}`);
+    return post(
+      AdminOperation.UpdateBucket,
+      fields,
+      `?id=${encodeURIComponent(bucket.id)}`,
+    );
   }
 
   /** addRule validates and saves a uniquely named lifecycle rule. */
@@ -186,7 +191,7 @@ export function BucketSettings({
         {(bucket.globalAliases || []).map((value) => (
           <div className="object-toolbar" key={value}>
             <code>{value}</code>
-            {allows(session, "RemoveBucketAlias") && (
+            {allows(session, AdminOperation.RemoveBucketAlias) && (
               <button
                 className="icon-button danger"
                 title="Remove alias"
@@ -194,7 +199,7 @@ export function BucketSettings({
                 onClick={async () => {
                   if (await confirm(`Remove alias “${value}”?`))
                     void apply(() =>
-                      post("RemoveBucketAlias", {
+                      post(AdminOperation.RemoveBucketAlias, {
                         bucketId: bucket.id,
                         globalAlias: value,
                       }),
@@ -206,7 +211,7 @@ export function BucketSettings({
             )}
           </div>
         ))}
-        {allows(session, "AddBucketAlias") && (
+        {allows(session, AdminOperation.AddBucketAlias) && (
           <div className="object-toolbar">
             <input
               value={alias}
@@ -219,7 +224,7 @@ export function BucketSettings({
               disabled={busy || !alias.trim()}
               onClick={() =>
                 void apply(async () => {
-                  await post("AddBucketAlias", {
+                  await post(AdminOperation.AddBucketAlias, {
                     bucketId: bucket.id,
                     globalAlias: alias.trim(),
                   });

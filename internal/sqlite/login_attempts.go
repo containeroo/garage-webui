@@ -15,6 +15,7 @@ func (s *Store) AllowLogin(ctx context.Context, peer string) (bool, error) {
 	return s.allowLoginAt(ctx, peer, time.Now())
 }
 
+// allowLoginAt enforces the peer login attempt budget at the supplied time.
 func (s *Store) allowLoginAt(ctx context.Context, peer string, now time.Time) (bool, error) {
 	if peer == "" {
 		return false, errors.New("missing login peer")

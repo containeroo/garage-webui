@@ -1,3 +1,4 @@
+import { ObjectAction, PreviewKind } from "../domain";
 import { useQuestions } from "./ui/questions";
 import { errorMessage } from "../api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,13 +45,13 @@ function ObjectPreview({
 }) {
   if (preview?.key !== item.key) return <File size={48} strokeWidth={1.3} />;
   switch (preview.kind) {
-    case "image":
+    case PreviewKind.Image:
       return <img src={preview.url} alt={item.key} />;
-    case "video":
+    case PreviewKind.Video:
       return <video src={preview.url} controls />;
-    case "audio":
+    case PreviewKind.Audio:
       return <audio src={preview.url} controls />;
-    case "text":
+    case PreviewKind.Text:
       return <pre>{preview.content}</pre>;
     default:
       return <File size={48} strokeWidth={1.3} />;
@@ -66,7 +67,7 @@ type Preview = {
   /** Complete object key, including any folder prefix. */
   key: string;
   /** Safe inline preview format, or an external-file fallback. */
-  kind: "image" | "video" | "audio" | "text" | "external";
+  kind: PreviewKind;
   /** Fetched text content for a bounded inline preview. */
   content?: string;
 };
@@ -79,14 +80,14 @@ function previewKind(key: string): Preview["kind"] {
       extension || "",
     )
   )
-    return "image";
-  if (["mp4", "webm"].includes(extension || "")) return "video";
-  if (["mp3", "wav", "ogg"].includes(extension || "")) return "audio";
+    return PreviewKind.Image;
+  if (["mp4", "webm"].includes(extension || "")) return PreviewKind.Video;
+  if (["mp3", "wav", "ogg"].includes(extension || "")) return PreviewKind.Audio;
   if (
     ["txt", "md", "json", "csv", "log", "yaml", "yml"].includes(extension || "")
   )
-    return "text";
-  return "external";
+    return PreviewKind.Text;
+  return PreviewKind.External;
 }
 
 // compareItems sorts only the displayed page, not unvisited S3 pages.
@@ -210,7 +211,9 @@ export function BucketObjects({
   async function download(key: string) {
     setError("");
     try {
-      const signed = await signOperation(bucketId, "download", { key });
+      const signed = await signOperation(bucketId, ObjectAction.Download, {
+        key,
+      });
       window.location.assign(signed.url);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -226,13 +229,13 @@ export function BucketObjects({
     try {
       const signed = await signOperation(
         bucketId,
-        "preview",
+        ObjectAction.Preview,
         { key: item.key },
         controller.signal,
       );
       if (controller.signal.aborted) return;
       const kind = previewKind(item.key);
-      if (kind !== "text") {
+      if (kind !== PreviewKind.Text) {
         setPreview({ key: item.key, url: signed.url, kind });
         return;
       }
@@ -658,7 +661,7 @@ export function BucketObjects({
                     Preview
                   </button>
                   {preview?.key === activeItem.key &&
-                    preview.kind === "external" && (
+                    preview.kind === PreviewKind.External && (
                       <a
                         className="secondary"
                         href={preview.url}

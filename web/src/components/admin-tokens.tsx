@@ -1,3 +1,4 @@
+import { AdminOperation } from "../admin-operation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -25,7 +26,10 @@ type Token = {
   /** Garage operations permitted by the admin token. */
   scope: string[];
 };
-const highPrivilegeScopes = ["CreateAdminToken", "UpdateAdminToken"];
+const highPrivilegeScopes: readonly string[] = [
+  AdminOperation.CreateAdminToken,
+  AdminOperation.UpdateAdminToken,
+];
 
 // grantsAdministration identifies scopes that can delegate full administrative access.
 function grantsAdministration(scope: string[]): boolean {
@@ -36,31 +40,31 @@ function grantsAdministration(scope: string[]): boolean {
 }
 
 const operations = [
-  "AddBucketAlias",
-  "AllowBucketKey",
-  "ApplyClusterLayout",
+  AdminOperation.AddBucketAlias,
+  AdminOperation.AllowBucketKey,
+  AdminOperation.ApplyClusterLayout,
   "CheckDomain",
   "CleanupIncompleteUploads",
   "ClusterLayoutSkipDeadNodes",
-  "ConnectClusterNodes",
-  "CreateAdminToken",
-  "CreateBucket",
-  "CreateKey",
+  AdminOperation.ConnectClusterNodes,
+  AdminOperation.CreateAdminToken,
+  AdminOperation.CreateBucket,
+  AdminOperation.CreateKey,
   "CreateMetadataSnapshot",
-  "DeleteAdminToken",
-  "DeleteBucket",
-  "DeleteKey",
-  "DenyBucketKey",
-  "GetAdminTokenInfo",
+  AdminOperation.DeleteAdminToken,
+  AdminOperation.DeleteBucket,
+  AdminOperation.DeleteKey,
+  AdminOperation.DenyBucketKey,
+  AdminOperation.GetAdminTokenInfo,
   "GetBlockInfo",
-  "GetBucketInfo",
-  "GetClusterHealth",
-  "GetClusterLayout",
+  AdminOperation.GetBucketInfo,
+  AdminOperation.GetClusterHealth,
+  AdminOperation.GetClusterLayout,
   "GetClusterLayoutHistory",
-  "GetClusterStatistics",
-  "GetClusterStatus",
-  "GetCurrentAdminTokenInfo",
-  "GetKeyInfo",
+  AdminOperation.GetClusterStatistics,
+  AdminOperation.GetClusterStatus,
+  AdminOperation.GetCurrentAdminTokenInfo,
+  AdminOperation.GetKeyInfo,
   "GetNodeInfo",
   "GetNodeStatistics",
   "GetWorkerInfo",
@@ -69,24 +73,24 @@ const operations = [
   "ImportKey",
   "InspectObject",
   "LaunchRepairOperation",
-  "ListAdminTokens",
+  AdminOperation.ListAdminTokens,
   "ListBlockErrors",
-  "ListBuckets",
+  AdminOperation.ListBuckets,
   "ListBucketsInfo",
-  "ListKeys",
+  AdminOperation.ListKeys,
   "ListKeysInfo",
   "ListWorkers",
   "Metrics",
-  "PreviewClusterLayoutChanges",
+  AdminOperation.PreviewClusterLayoutChanges,
   "PurgeBlocks",
-  "RemoveBucketAlias",
+  AdminOperation.RemoveBucketAlias,
   "RetryBlockResync",
-  "RevertClusterLayout",
+  AdminOperation.RevertClusterLayout,
   "SetWorkerVariable",
-  "UpdateAdminToken",
-  "UpdateBucket",
-  "UpdateClusterLayout",
-  "UpdateKey",
+  AdminOperation.UpdateAdminToken,
+  AdminOperation.UpdateBucket,
+  AdminOperation.UpdateClusterLayout,
+  AdminOperation.UpdateKey,
 ];
 /** AdminTokens lists, creates, edits, and revokes Garage administrative credentials. */
 export function AdminTokens({
@@ -109,7 +113,7 @@ export function AdminTokens({
   /** load retrieves the current view's data and reports unavailable results. */
   const load = useCallback(
     (signal?: AbortSignal) =>
-      get<Token[]>("ListAdminTokens", "", { signal })
+      get<Token[]>(AdminOperation.ListAdminTokens, "", { signal })
         .then((result) => {
           if (signal?.aborted) return;
           setTokens(result);
@@ -156,7 +160,11 @@ export function AdminTokens({
       return;
 
     try {
-      await post("DeleteAdminToken", {}, `?id=${encodeURIComponent(token.id)}`);
+      await post(
+        AdminOperation.DeleteAdminToken,
+        {},
+        `?id=${encodeURIComponent(token.id)}`,
+      );
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -184,7 +192,9 @@ export function AdminTokens({
           secretToken?: string;
         }
       >(
-        editing ? "UpdateAdminToken" : "CreateAdminToken",
+        editing
+          ? AdminOperation.UpdateAdminToken
+          : AdminOperation.CreateAdminToken,
         {
           name: name.trim(),
           scope,
@@ -215,7 +225,7 @@ export function AdminTokens({
             </h2>
             <p>Manage Garage Admin API access and token expiration.</p>
           </div>
-          {allows(session, "CreateAdminToken") && (
+          {allows(session, AdminOperation.CreateAdminToken) && (
             <button className="primary" onClick={() => open(null)}>
               <Plus size={16} /> Create token
             </button>
@@ -289,26 +299,28 @@ export function AdminTokens({
                       : "Never"}
                 </span>
                 <div className="key-actions">
-                  {token.id && allows(session, "UpdateAdminToken") && (
-                    <button
-                      title="Edit token"
-                      aria-label={`Edit ${token.name}`}
-                      className="icon-button"
-                      onClick={() => open(token)}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                  )}
-                  {token.id && allows(session, "DeleteAdminToken") && (
-                    <button
-                      title="Revoke token"
-                      aria-label={`Revoke ${token.name}`}
-                      className="icon-button danger"
-                      onClick={() => void revokeToken(token)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  {token.id &&
+                    allows(session, AdminOperation.UpdateAdminToken) && (
+                      <button
+                        title="Edit token"
+                        aria-label={`Edit ${token.name}`}
+                        className="icon-button"
+                        onClick={() => open(token)}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                  {token.id &&
+                    allows(session, AdminOperation.DeleteAdminToken) && (
+                      <button
+                        title="Revoke token"
+                        aria-label={`Revoke ${token.name}`}
+                        className="icon-button danger"
+                        onClick={() => void revokeToken(token)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   {!token.id && (
                     <span
                       className="muted"

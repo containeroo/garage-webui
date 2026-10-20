@@ -1,3 +1,5 @@
+import { AdminOperation } from "../admin-operation";
+import { CredentialKind } from "../domain";
 import {
   ChevronRight,
   Database,
@@ -58,7 +60,7 @@ export function Sidebar({
               {page === id && <ChevronRight size={15} className="nav-arrow" />}
             </button>
           ))}
-        {allows(session, "ListAdminTokens") && (
+        {allows(session, AdminOperation.ListAdminTokens) && (
           <button
             className={page === "tokens" ? "active" : ""}
             aria-current={page === "tokens" ? "page" : undefined}
@@ -75,7 +77,7 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-bottom">
-        {session.mode === "admin" && (
+        {session.mode === CredentialKind.Admin && (
           <div className="sidebar-status">
             <span
               className={`dot ${health?.status === "healthy" ? "" : "warning"}`}

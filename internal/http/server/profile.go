@@ -12,9 +12,12 @@ import (
 
 // OwnProfile returns the current Garage credential label and theme.
 func OwnProfile() http.HandlerFunc {
+	// profileResponse describes the current session profile.
 	type profileResponse struct {
+		// Username contains the authenticated display name.
 		Username string `json:"username"`
-		Theme    string `json:"theme"`
+		// Theme contains the selected theme identifier.
+		Theme string `json:"theme"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := middleware.RequestIdentity(r)
@@ -25,7 +28,9 @@ func OwnProfile() http.HandlerFunc {
 // UpdateOwnTheme validates and stores a theme for the active session.
 func UpdateOwnTheme(authentication *auth.Service, catalog []themes.Theme) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// input contains the requested session theme change.
 		var input struct {
+			// Theme contains the selected theme identifier.
 			Theme string `json:"theme"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {

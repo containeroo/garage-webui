@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/containeroo/garage-webui/internal/utils"
@@ -25,44 +26,66 @@ const (
 
 // Credential is encrypted at rest and is never included in session responses.
 type Credential struct {
-	Kind            string `json:"kind"`
-	Token           string `json:"token,omitempty"`
-	AccessKeyID     string `json:"accessKeyId,omitempty"`
+	// Kind identifies the credential mechanism.
+	Kind credential.Kind `json:"kind"`
+	// Token contains the Garage admin token.
+	Token string `json:"token,omitempty"`
+	// AccessKeyID identifies the S3 access key.
+	AccessKeyID string `json:"accessKeyId,omitempty"`
+	// SecretAccessKey contains the secret used to sign S3 requests.
 	SecretAccessKey string `json:"secretAccessKey,omitempty"`
 }
 
 // Identity contains fresh Garage metadata and the session's credential.
 type Identity struct {
+	// Credential holds verified credentials for server-side use.
 	Credential Credential
-	User       string
-	Scope      []string
-	Theme      string
+	// User contains the session display name.
+	User string
+	// Scope lists the allowed admin operations.
+	Scope []string
+	// Theme contains the selected theme identifier.
+	Theme string
 }
 
 // Allows checks the current Garage admin-token scope.
-func (id Identity) Allows(operation string) bool {
-	return id.Credential.Kind == "admin" && (slices.Contains(id.Scope, "*") || slices.Contains(id.Scope, operation))
+func (id Identity) Allows(operation admin.Operation) bool {
+	return id.Credential.Kind == credential.Admin && (slices.Contains(id.Scope, "*") || slices.Contains(id.Scope, string(operation)))
 }
 
 // Service owns only deployment endpoints and session encryption, never a shared Garage credential.
 type Service struct {
-	store      storage.Sessions
+	// store persists encrypted authentication sessions.
+	store storage.Sessions
+	// encryption encrypts and authenticates stored credentials.
 	encryption cipher.AEAD
-	GarageURL  string
-	S3URL      string
-	Region     string
-	publicURL  string
-	prefix     string
-	secure     bool
+	// GarageURL specifies the Garage Admin API endpoint.
+	GarageURL string
+	// S3URL specifies the browser-accessible S3 endpoint.
+	S3URL string
+	// Region specifies the S3 signing region.
+	Region string
+	// publicURL specifies the browser-facing application URL.
+	publicURL string
+	// prefix specifies the application route prefix.
+	prefix string
+	// secure requires HTTPS for session cookies.
+	secure bool
 }
 
 // Config describes deployment endpoints and the credential encryption key.
 type Config struct {
-	PublicURL     string
-	RoutePrefix   string
-	GarageURL     string
-	S3URL         string
-	Region        string
+	// PublicURL specifies the browser-facing application URL.
+	PublicURL string
+	// RoutePrefix specifies the application route prefix.
+	RoutePrefix string
+	// GarageURL specifies the Garage Admin API endpoint.
+	GarageURL string
+	// S3URL specifies the browser-accessible S3 endpoint.
+	S3URL string
+	// Region specifies the S3 signing region.
+	Region string
+	// SessionSecret provides the secret used to derive session encryption keys.
 	SessionSecret string
 }
 
