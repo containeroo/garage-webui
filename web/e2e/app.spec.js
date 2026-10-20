@@ -483,3 +483,33 @@ test.describe.serial("Garage credentials and storage", () => {
     await expect(page.getByRole("button", { name: "Previous" })).toHaveCount(0);
   });
 });
+
+test("keeps sign-in anchored and restores the preferred theme after signing out", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const card = page.locator(".login-card");
+  const adminPosition = await card.boundingBox();
+  await page.getByRole("tab", { name: "S3 credentials" }).click();
+  await expect(page.getByLabel("Access key ID")).toBeVisible();
+  expect((await card.boundingBox()).y).toBe(adminPosition.y);
+  await page.getByRole("tab", { name: "Admin token" }).click();
+  expect((await card.boundingBox()).y).toBe(adminPosition.y);
+  await login(page);
+  await page.getByRole("button", { name: /^My profile:/ }).click();
+  await page.getByLabel("Theme").selectOption("Dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sign in to Garage" }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Sign in to Garage" }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await login(page);
+  await page.getByRole("button", { name: /^My profile:/ }).click();
+  await expect(page.getByLabel("Theme")).toHaveValue("Dark");
+});

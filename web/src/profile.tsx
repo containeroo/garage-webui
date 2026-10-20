@@ -52,7 +52,7 @@ export function ProfileSettings({
             </select>
           </label>
           <p className="settings-note">
-            Appearance is saved for this browser session.
+            Appearance is saved in this browser and your current session.
           </p>
           {theme.error && (
             <p role="alert" className="object-error">

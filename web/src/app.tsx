@@ -21,7 +21,7 @@ import "./style.css";
 import "./theme.css";
 import { AdminTokens } from "./components/admin-tokens";
 import { ProfileSettings } from "./profile";
-import { useTheme } from "./components/theme-picker";
+import { useLocalTheme, useTheme } from "./components/theme-picker";
 import { QuestionProvider, useQuestions } from "./components/ui/questions";
 import { DialogPanel } from "./components/ui/dialog";
 import { Button } from "./components/ui/button";
@@ -62,6 +62,7 @@ export function App() {
 
 /** AppContent loads the session and chooses sign-in or the authenticated workspace. */
 function AppContent() {
+  useLocalTheme();
   const [session, setSession] = useState<Session>();
   const [error, setError] = useState("");
   /** loadSession retrieves the current credential metadata and exposes connection failures. */

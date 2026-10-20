@@ -22,6 +22,9 @@ const json = (value: unknown, status = 200) =>
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
+  document.documentElement.removeAttribute("style");
+  delete document.documentElement.dataset.theme;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
@@ -381,4 +384,36 @@ test("loads and saves the session theme", async () => {
       document.documentElement.style.getPropertyValue("--theme-background"),
     ).toBeTruthy(),
   );
+  expect(
+    JSON.parse(localStorage.getItem("garage-webui.theme") || "null").title,
+  ).toBe("Nord");
+});
+
+test("restores the browser theme on sign-in without authenticated theme requests", async () => {
+  const cached = {
+    title: "Nord",
+    color_scheme: "dark",
+    colors: { background: "#2e3440" },
+  };
+  localStorage.setItem("garage-webui.theme", JSON.stringify(cached));
+  const fetch = vi.fn(async () => json(session("")));
+  vi.stubGlobal("fetch", fetch);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Sign in to Garage" });
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(
+    document.documentElement.style.getPropertyValue("--theme-background"),
+  ).toBe("#2e3440");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("ignores an invalid cached theme", async () => {
+  localStorage.setItem("garage-webui.theme", "invalid JSON");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => json(session(""))),
+  );
+  render(<App />);
+  await screen.findByRole("heading", { name: "Sign in to Garage" });
+  expect(document.documentElement.dataset.theme).toBeUndefined();
 });

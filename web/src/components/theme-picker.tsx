@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage, request } from "../api";
 
 /** A named color scheme supplied by the backend theme catalog. */
@@ -29,6 +29,45 @@ function resetTheme() {
   root.style.removeProperty("color-scheme");
   delete root.dataset.theme;
 }
+const themeStorageKey = "garage-webui.theme";
+
+/** readLocalTheme restores the cached palette without requiring authentication. */
+function readLocalTheme(): Theme | undefined {
+  try {
+    const theme = JSON.parse(localStorage.getItem(themeStorageKey) || "null");
+    if (
+      theme &&
+      typeof theme.title === "string" &&
+      (theme.color_scheme === "light" || theme.color_scheme === "dark") &&
+      theme.colors &&
+      typeof theme.colors === "object" &&
+      !Array.isArray(theme.colors) &&
+      Object.values(theme.colors).every((color) => typeof color === "string")
+    )
+      return theme;
+  } catch {
+    /* Storage can be unavailable or contain an invalid preference. */
+  }
+  return undefined;
+}
+
+/** rememberTheme caches the palette for sign-in and subsequent sessions. */
+function rememberTheme(theme: Theme) {
+  try {
+    localStorage.setItem(themeStorageKey, JSON.stringify(theme));
+  } catch {
+    /* A storage restriction must not prevent selecting a theme. */
+  }
+}
+
+/** useLocalTheme applies the browser preference before the first screen is painted. */
+export function useLocalTheme() {
+  useLayoutEffect(() => {
+    const theme = readLocalTheme();
+    if (theme) applyTheme(theme);
+  }, []);
+}
+
 /** useTheme loads, applies, and persists the authenticated session's appearance. */
 export function useTheme() {
   const [catalog, setCatalog] = useState<Catalog>({});
@@ -51,10 +90,12 @@ export function useTheme() {
           files.map((theme) => [theme.title, theme]),
         );
         if (!themes.Light) throw new Error("default theme unavailable");
-        const name = themes[profile.theme] ? profile.theme : "Light";
+        const preferred = readLocalTheme()?.title || profile.theme;
+        const name = themes[preferred] ? preferred : "Light";
         setCatalog(themes);
         setSelected(name);
         applyTheme(themes[name]);
+        rememberTheme(themes[name]);
       })
       .catch((cause) => {
         if (active) setError(errorMessage(cause));
@@ -62,7 +103,6 @@ export function useTheme() {
     return () => {
       active = false;
       saving.current?.abort();
-      resetTheme();
     };
   }, []);
   /** change saves the selected theme and discards superseded or unmounted requests. */
@@ -82,6 +122,7 @@ export function useTheme() {
       if (controller.signal.aborted) return;
       setSelected(name);
       applyTheme(catalog[name]);
+      rememberTheme(catalog[name]);
     } catch (cause) {
       if (!controller.signal.aborted) setError(errorMessage(cause));
     } finally {
