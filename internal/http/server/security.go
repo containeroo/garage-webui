@@ -10,13 +10,15 @@ import (
 )
 
 // validMutation rejects cross-origin and non-JSON writes.
-func (s *Server) validMutation(w http.ResponseWriter, r *http.Request) bool {
-	if !auth.SameOrigin(r, s.publicURL) || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		httpresponse.Error(w, "invalid request origin or content type", http.StatusForbidden)
-		return false
-	}
+func validMutation(publicURL string) func(http.ResponseWriter, *http.Request) bool {
+	return func(w http.ResponseWriter, r *http.Request) bool {
+		if !auth.SameOrigin(r, publicURL) || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			httpresponse.Error(w, "invalid request origin or content type", http.StatusForbidden)
+			return false
+		}
 
-	return true
+		return true
+	}
 }
 
 // writeJSON writes an encoded response.

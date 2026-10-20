@@ -17,11 +17,6 @@ import (
 	httpkitmiddleware "github.com/containeroo/httpkit/middleware"
 )
 
-// LoginLimiter authorizes bounded login attempts across all application replicas.
-type LoginLimiter interface {
-	AllowLogin(context.Context, string) (bool, error)
-}
-
 // ObjectServices prepares credential-scoped S3 operations and bucket deletion.
 type ObjectServices interface {
 	ForIdentity(auth.Identity) (*objects.Service, error)
@@ -39,14 +34,14 @@ type Server struct {
 	prefix       string
 	logger       *slog.Logger
 	accessLog    bool
-	loginLimiter LoginLimiter
+	loginLimiter middleware.LoginLimiter
 }
 
 // New constructs the HTTP server.
 func New(
 	authentication *auth.Service,
 	objectServices ObjectServices,
-	loginLimiter LoginLimiter,
+	loginLimiter middleware.LoginLimiter,
 	s3Origin string,
 	publicURL, prefix string,
 	logger *slog.Logger,
@@ -71,19 +66,70 @@ func New(
 // Handler returns the application routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	policies := middleware.New(s.auth, s.s3Origin, s.logger, s.validMutation, s.allowLogin)
-	mux.HandleFunc("GET /api/session", s.session)
-	mux.Handle("POST /api/login", httpkitmiddleware.Chain(http.HandlerFunc(s.login), policies.Mutation, policies.LimitLogin(true)))
-	mux.Handle("POST /api/logout", httpkitmiddleware.Chain(http.HandlerFunc(s.logout), policies.Mutation))
-	mux.Handle("GET /api/profile", httpkitmiddleware.Chain(http.HandlerFunc(s.getOwnProfile), policies.Authenticate))
-	mux.Handle("GET /api/themes", httpkitmiddleware.Chain(http.HandlerFunc(s.themeCatalog), policies.Authenticate))
-	mux.Handle("PUT /api/profile/theme", httpkitmiddleware.Chain(http.HandlerFunc(s.updateOwnTheme), policies.Authenticate, policies.Mutation))
-	mux.Handle("GET /api/garage/{operation}", httpkitmiddleware.Chain(http.HandlerFunc(s.garageRequest), policies.Authenticate, policies.Mutation))
-	mux.Handle("POST /api/garage/{operation}", httpkitmiddleware.Chain(http.HandlerFunc(s.garageRequest), policies.Authenticate, policies.Mutation))
-	mux.Handle("POST /api/uploads/presign", httpkitmiddleware.Chain(http.HandlerFunc(s.presignUpload), policies.Authenticate, policies.Mutation))
-	mux.Handle("POST /api/objects/presign", httpkitmiddleware.Chain(http.HandlerFunc(s.presignObject), policies.Authenticate, policies.Mutation))
-	mux.Handle("GET /", s.frontend())
-	middlewares := []httpkitmiddleware.Middleware{policies.SecurityHeaders(), middleware.APIHeaders(), middleware.RequestContext()}
+
+	policies := middleware.New(s.auth, s.s3Origin, s.logger, validMutation(s.publicURL), middleware.AllowLogin(s.loginLimiter, s.logger))
+
+	mux.Handle("GET /api/session", Session(s.auth, s.logger))
+
+	mux.Handle("POST /api/login",
+		httpkitmiddleware.Chain(
+			Login(s.auth, s.logger),
+			policies.Mutation,
+			policies.LimitLogin(true),
+		))
+	mux.Handle("POST /api/logout",
+		httpkitmiddleware.Chain(
+			Logout(s.auth),
+			policies.Mutation,
+		))
+	mux.Handle("GET /api/profile",
+		httpkitmiddleware.Chain(
+			OwnProfile(),
+			policies.Authenticate,
+		))
+	mux.Handle("GET /api/themes",
+		httpkitmiddleware.Chain(
+			ThemeCatalog(s.themes),
+			policies.Authenticate,
+		))
+	mux.Handle("PUT /api/profile/theme",
+		httpkitmiddleware.Chain(
+			UpdateOwnTheme(s.auth, s.themes),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle("GET /api/garage/{operation}",
+		httpkitmiddleware.Chain(
+			GarageRequest(s.auth, s.objects, s.logger),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle("POST /api/garage/{operation}",
+		httpkitmiddleware.Chain(
+			GarageRequest(s.auth, s.objects, s.logger),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle("POST /api/uploads/presign",
+		httpkitmiddleware.Chain(
+			PresignUpload(s.objects, s.logger),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle("POST /api/objects/presign",
+		httpkitmiddleware.Chain(
+			PresignObject(s.objects, s.logger),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle("GET /", Frontend(s.assets, s.prefix))
+
+	middlewares := []httpkitmiddleware.Middleware{
+		policies.SecurityHeaders(),
+		middleware.APIHeaders(),
+		middleware.RequestContext(),
+	}
+
 	if s.accessLog {
 		middlewares = append(middlewares, policies.AccessLogger())
 	}
@@ -91,11 +137,11 @@ func (s *Server) Handler() http.Handler {
 	return httpkitmiddleware.Chain(mux, middlewares...)
 }
 
-// frontend serves the SPA with a deployment-relative base URL and static assets.
+// Frontend serves the SPA with a deployment-relative base URL and static assets.
 // AppKit strips the route prefix before reaching this handler, just like Kumbuka.
-func (s *Server) frontend() http.Handler {
-	assets := http.FileServer(http.FS(s.assets))
-	index, err := fs.ReadFile(s.assets, "index.html")
+func Frontend(assetsFS fs.FS, prefix string) http.Handler {
+	assets := http.FileServer(http.FS(assetsFS))
+	index, err := fs.ReadFile(assetsFS, "index.html")
 	if err != nil {
 		// A missing embedded index is a build error; fail each request safely.
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -103,14 +149,14 @@ func (s *Server) frontend() http.Handler {
 		})
 	}
 
-	notFound, err := fs.ReadFile(s.assets, "404.html")
+	notFound, err := fs.ReadFile(assetsFS, "404.html")
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "frontend unavailable", http.StatusInternalServerError)
 		})
 	}
 
-	base := strings.TrimRight(s.prefix, "/") + "/"
+	base := strings.TrimRight(prefix, "/") + "/"
 	index = replaceBase(index, base)
 	notFound = replaceBase(notFound, base)
 
@@ -124,7 +170,7 @@ func (s *Server) frontend() http.Handler {
 		}
 
 		if isMissingPage(r) {
-			if _, err := fs.Stat(s.assets, strings.TrimPrefix(r.URL.Path, "/")); err != nil {
+			if _, err := fs.Stat(assetsFS, strings.TrimPrefix(r.URL.Path, "/")); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.Header().Set("Cache-Control", "no-store")
 				w.WriteHeader(http.StatusNotFound)

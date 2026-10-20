@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,65 +13,69 @@ import (
 	"github.com/containeroo/garage-webui/internal/s3"
 )
 
-// presignUpload authorizes Garage credentials and issues a short-lived, object-scoped URL.
+// PresignUpload authorizes Garage credentials and issues a short-lived, object-scoped URL.
 // Only metadata passes through the backend; file bytes go directly to the S3 API.
-func (s *Server) presignUpload(w http.ResponseWriter, r *http.Request) {
-	id, _ := middleware.RequestIdentity(r)
-	kind := id.Credential.Kind
-
-	service, err := s.objectService(id)
-	if errors.Is(err, objects.ErrForbidden) {
-		httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
-		return
+func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.HandlerFunc {
+	type presignUploadResponse struct {
+		URL       string `json:"url"`
+		Method    string `json:"method"`
+		ExpiresIn int    `json:"expiresIn"`
 	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, _ := middleware.RequestIdentity(r)
+		kind := id.Credential.Kind
 
-	if err != nil {
-		httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
-	var input struct {
-		BucketID string `json:"bucketId"`
-		Key      string `json:"key"`
-		Size     int64  `json:"size"`
-	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
-		return
-	}
-
-	result, err := service.PrepareUpload(r.Context(), kind, input.BucketID, input.Key, input.Size, time.Now())
-	if errors.Is(err, objects.ErrForbidden) {
-		httpresponse.Error(w, "upload permissions required", http.StatusForbidden)
-		return
-	}
-
-	if errors.Is(err, objects.ErrInvalid) {
-		httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
-		return
-	}
-
-	if errors.Is(err, objects.ErrBucket) {
-		httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
-		return
-	}
-
-	if err != nil {
-		if s.logger != nil {
-			s.logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
+		service, err := objectServices.ForIdentity(id)
+		if errors.Is(err, objects.ErrForbidden) {
+			httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
+			return
 		}
 
-		httpresponse.Error(w, "cannot prepare Garage upload", http.StatusBadGateway)
+		if err != nil {
+			httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
+			return
+		}
 
-		return
+		var input struct {
+			BucketID string `json:"bucketId"`
+			Key      string `json:"key"`
+			Size     int64  `json:"size"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+			return
+		}
+
+		result, err := service.PrepareUpload(r.Context(), kind, input.BucketID, input.Key, input.Size, time.Now())
+		if errors.Is(err, objects.ErrForbidden) {
+			httpresponse.Error(w, "upload permissions required", http.StatusForbidden)
+			return
+		}
+
+		if errors.Is(err, objects.ErrInvalid) {
+			httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+			return
+		}
+
+		if errors.Is(err, objects.ErrBucket) {
+			httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
+			return
+		}
+
+		if err != nil {
+			logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
+			httpresponse.Error(w, "cannot prepare Garage upload", http.StatusBadGateway)
+
+			return
+		}
+
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, presignUploadResponse{
+			URL:       result.URL,
+			Method:    result.Method,
+			ExpiresIn: int(s3.URLLifetime.Seconds()),
+		})
 	}
-
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{
-		"url":       result.URL,
-		"method":    result.Method,
-		"expiresIn": int(s3.URLLifetime.Seconds()),
-	})
 }

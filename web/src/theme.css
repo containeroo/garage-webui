@@ -1422,10 +1422,9 @@ button:disabled {
 
 /* Admin token list and scope picker. */
 .table .token-columns {
-  grid-template-columns: minmax(185px, 2fr) minmax(160px, 1.4fr) minmax(
-      100px,
-      0.7fr
-    ) 80px;
+  grid-template-columns:
+    minmax(185px, 2fr) minmax(160px, 1.4fr) minmax(100px, 0.7fr)
+    80px;
 }
 .token-identity {
   display: flex;

@@ -25,8 +25,18 @@ type Factory struct {
 }
 
 // New creates an object-service factory shared by all application requests.
-func New(authentication *auth.Service, store signing.BucketLocker, publicURL string) *Factory {
-	return &Factory{auth: authentication, store: store, deletion: buckets.New(store), publicURL: publicURL, cache: credentials.NewCache()}
+func New(
+	authentication *auth.Service,
+	store signing.BucketLocker,
+	publicURL string,
+) *Factory {
+	return &Factory{
+		auth:      authentication,
+		store:     store,
+		deletion:  buckets.New(store),
+		publicURL: publicURL,
+		cache:     credentials.NewCache(),
+	}
 }
 
 // ForIdentity produces a service restricted to the current Garage credentials.
@@ -47,7 +57,8 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 		buckets = client
 	case "s3":
 		provider = sessionKeys{credential: signing.Credential{
-			AccessKeyID: id.Credential.AccessKeyID, SecretAccessKey: id.Credential.SecretAccessKey,
+			AccessKeyID:     id.Credential.AccessKeyID,
+			SecretAccessKey: id.Credential.SecretAccessKey,
 		}}
 		buckets = sessionBuckets{auth: f.auth, credential: id.Credential}
 	default:

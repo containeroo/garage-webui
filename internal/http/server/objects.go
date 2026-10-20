@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -26,62 +27,68 @@ type objectRequest struct {
 	RangeEnd     int64  `json:"rangeEnd"`
 }
 
-// presignObject authorizes listing, downloading or deleting without proxying data.
-func (s *Server) presignObject(w http.ResponseWriter, r *http.Request) {
-	id, _ := middleware.RequestIdentity(r)
-	kind := id.Credential.Kind
-
-	service, err := s.objectService(id)
-	if errors.Is(err, objects.ErrForbidden) {
-		httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
-		return
+// PresignObject authorizes listing, downloading or deleting without proxying data.
+func PresignObject(objectServices ObjectServices, logger *slog.Logger) http.HandlerFunc {
+	type presignObjectResponse struct {
+		URL         string            `json:"url"`
+		Method      string            `json:"method"`
+		ExpiresIn   int               `json:"expiresIn"`
+		CopySource  string            `json:"copySource"`
+		CopyHeaders map[string]string `json:"copyHeaders"`
 	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, _ := middleware.RequestIdentity(r)
+		kind := id.Credential.Kind
 
-	if err != nil {
-		httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
-	var input objectRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		httpresponse.Error(w, "invalid object request", http.StatusBadRequest)
-		return
-	}
-
-	result, err := service.Prepare(r.Context(), kind, objects.Request(input), time.Now())
-	if errors.Is(err, objects.ErrInvalid) {
-		httpresponse.Error(w, "invalid object request", http.StatusBadRequest)
-		return
-	}
-
-	if errors.Is(err, objects.ErrForbidden) {
-		httpresponse.Error(w, "object credentials required", http.StatusForbidden)
-		return
-	}
-
-	if errors.Is(err, objects.ErrBucket) {
-		httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
-		return
-	}
-
-	if err != nil {
-		if s.logger != nil {
-			s.logger.Error("sign object operation", "action", input.Action, "bucket", input.BucketID, "error", err)
+		service, err := objectServices.ForIdentity(id)
+		if errors.Is(err, objects.ErrForbidden) {
+			httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
+			return
 		}
 
-		httpresponse.Error(w, "cannot prepare object operation", http.StatusBadGateway)
+		if err != nil {
+			httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
+			return
+		}
 
-		return
+		var input objectRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			httpresponse.Error(w, "invalid object request", http.StatusBadRequest)
+			return
+		}
+
+		result, err := service.Prepare(r.Context(), kind, objects.Request(input), time.Now())
+		if errors.Is(err, objects.ErrInvalid) {
+			httpresponse.Error(w, "invalid object request", http.StatusBadRequest)
+			return
+		}
+
+		if errors.Is(err, objects.ErrForbidden) {
+			httpresponse.Error(w, "object credentials required", http.StatusForbidden)
+			return
+		}
+
+		if errors.Is(err, objects.ErrBucket) {
+			httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
+			return
+		}
+
+		if err != nil {
+			logger.Error("sign object operation", "action", input.Action, "bucket", input.BucketID, "error", err)
+			httpresponse.Error(w, "cannot prepare object operation", http.StatusBadGateway)
+
+			return
+		}
+
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, presignObjectResponse{
+			URL:         result.URL,
+			Method:      result.Method,
+			ExpiresIn:   int(s3.URLLifetime.Seconds()),
+			CopySource:  result.CopySource,
+			CopyHeaders: result.CopyHeaders,
+		})
 	}
-
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{
-		"url":         result.URL,
-		"method":      result.Method,
-		"expiresIn":   int(s3.URLLifetime.Seconds()),
-		"copySource":  result.CopySource,
-		"copyHeaders": result.CopyHeaders,
-	})
 }

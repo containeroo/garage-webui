@@ -4,73 +4,73 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
 
-// session returns public credential metadata without exposing its secret.
-func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	id, err := s.auth.Authenticate(r)
-	if err != nil && !errors.Is(err, auth.ErrUnauthenticated) {
-		s.logger.Log(r.Context(), slog.LevelError, "garage session validation failed", "error", err)
-		httpresponse.Error(w, "garage authentication unavailable; check server logs", http.StatusServiceUnavailable)
-
-		return
+// Session returns public credential metadata without exposing its secret.
+func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc {
+	type sessionResponse struct {
+		Mode           string   `json:"mode"`
+		User           string   `json:"user"`
+		Scope          []string `json:"scope"`
+		UploadsEnabled bool     `json:"uploadsEnabled"`
 	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := authentication.Authenticate(r)
+		if err != nil && !errors.Is(err, auth.ErrUnauthenticated) {
+			logger.ErrorContext(r.Context(), "garage authentication failed", "error", err)
+			httpresponse.Error(w, "garage authentication unavailable; check server logs", http.StatusServiceUnavailable)
 
-	writeJSON(w, http.StatusOK, map[string]any{"mode": id.Credential.Kind, "user": id.User, "scope": id.Scope, "uploadsEnabled": s.auth.S3URL != ""})
-}
-
-// login verifies a Garage credential and starts a revocable session.
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	var credential auth.Credential
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&credential); err != nil {
-		httpresponse.Error(w, "invalid sign-in request", http.StatusBadRequest)
-		return
-	}
-
-	if err := s.auth.Login(w, r, credential); err != nil {
-		if errors.Is(err, auth.ErrUnauthenticated) {
-			httpresponse.Error(w, "invalid Garage credentials", http.StatusUnauthorized)
-		} else {
-			s.logger.Log(r.Context(), slog.LevelError, "garage credential validation failed", "error", err)
-			httpresponse.Error(w, "garage authentication unavailable; check Garage Admin API availability and server logs", http.StatusServiceUnavailable)
+			return
 		}
 
-		return
+		writeJSON(w, http.StatusOK, sessionResponse{
+			Mode:           id.Credential.Kind,
+			User:           id.User,
+			Scope:          id.Scope,
+			UploadsEnabled: authentication.S3URL != "",
+		})
 	}
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
-// allowLogin throttles requests by the immediate TCP peer on every replica.
-// Do not trust X-Forwarded-For without an explicitly trusted proxy boundary.
-func (s *Server) allowLogin(r *http.Request) bool {
-	peer, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		peer = r.RemoteAddr
-	}
+// Login verifies a Garage credential and starts a revocable session.
+func Login(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var credential auth.Credential
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
 
-	permitted, err := s.loginLimiter.AllowLogin(r.Context(), peer)
-	if err != nil {
-		s.logger.Error("login rate limit unavailable", "error", err)
-		return false // Fail closed when the database is unavailable.
-	}
+		if err := decoder.Decode(&credential); err != nil {
+			httpresponse.Error(w, "invalid sign-in request", http.StatusBadRequest)
+			return
+		}
 
-	return permitted
+		if err := authentication.Login(w, r, credential); err != nil {
+			if errors.Is(err, auth.ErrUnauthenticated) {
+				httpresponse.Error(w, "invalid Garage credentials", http.StatusUnauthorized)
+			} else {
+				logger.ErrorContext(r.Context(), "garage credential validation failed", "error", err)
+				httpresponse.Error(w, "garage authentication unavailable; check Garage Admin API availability and server logs", http.StatusServiceUnavailable)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
-// logout revokes the active credential session.
-func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if err := s.auth.Logout(w, r); err != nil {
-		httpresponse.Error(w, "could not sign out", http.StatusServiceUnavailable)
-		return
-	}
+// Logout revokes the active credential session.
+func Logout(authentication *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := authentication.Logout(w, r); err != nil {
+			httpresponse.Error(w, "could not sign out", http.StatusServiceUnavailable)
+			return
+		}
 
-	w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

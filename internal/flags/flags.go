@@ -61,13 +61,13 @@ func registerGarage(tf *tinyflags.FlagSet, cfg *Config) {
 		Required().
 		OverriddenValueMaskFn(tinyflags.MaskFirstLast).
 		Value()
-
 }
 
 // registerS3 registers S3 upload flags.
 func registerS3(tf *tinyflags.FlagSet, cfg *Config) {
 	tf.StringVar(&cfg.S3PublicURL, "s3-public-url", "", "Browser-accessible Garage S3 API origin for direct uploads (optional).").
 		Value()
+
 	tf.StringVar(&cfg.S3Region, "s3-region", "garage", "Garage S3 region for signed upload URLs.").
 		Value()
 }
@@ -75,9 +75,19 @@ func registerS3(tf *tinyflags.FlagSet, cfg *Config) {
 // registerDatabase exposes the database URL and PostgreSQL-only pool options.
 func registerDatabase(tf *tinyflags.FlagSet, cfg *database.Config) {
 	tf.StringVar(&cfg.URL, "database-url", "", "PostgreSQL URL or SQLite file URL (sqlite:///absolute/path or sqlite:relative/path)").
-		Section(appkitconfig.SectionDatabase).Placeholder("URL").Required().OverriddenValueMaskFn(tinyflags.MaskPostgresURL).Value()
+		Section(appkitconfig.SectionDatabase).
+		Placeholder("URL").
+		Required().
+		OverriddenValueMaskFn(tinyflags.MaskPostgresURL).
+		Value()
+
 	tf.Int32Var(&cfg.MaxConns, "database-max-conns", 0, "Maximum PostgreSQL connections; 0 uses driver defaults").
-		Section(appkitconfig.SectionDatabase).Validate(tinyflags.NonNegative[int32]()).Value()
+		Section(appkitconfig.SectionDatabase).
+		Validate(tinyflags.NonNegative[int32]()).
+		Value()
+
 	tf.Int32Var(&cfg.MinIdleConns, "database-min-idle-conns", 0, "Minimum idle PostgreSQL connections; 0 uses driver defaults").
-		Section(appkitconfig.SectionDatabase).Validate(tinyflags.NonNegative[int32]()).Value()
+		Section(appkitconfig.SectionDatabase).
+		Validate(tinyflags.NonNegative[int32]()).
+		Value()
 }

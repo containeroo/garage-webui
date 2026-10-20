@@ -12,6 +12,11 @@ DEV_TOOLS_VERSION ?= v0.9.0
 GOLANGCI_LINT_VERSION ?= v2.15.0
 GOLANGCI_LINT := bin/golangci-lint
 
+## Formatting
+NPX ?= npx
+PRETTIER_MD_SOURCES := README.md "**/*.md"
+
+
 include bin/dev-tools.mk
 include $(call dev-tools-module,tag)
 include $(call dev-tools-module,port)
@@ -103,11 +108,15 @@ fmt: fmt-go fmt-web fmt-md ## Format Go, frontend, and Markdown files.
 fmt-go: ## Format Go files.
 	gofmt -w cmd internal themes web
 
-fmt-web: ## Format frontend files.
-	cd web && npm exec --no -- prettier --write "src/**/*.{ts,tsx,css}" "public/*.css" "public/*.html" "index.html" "vite.config.ts"
+.PHONY: fmt-web
+fmt-web: ## Format CSS and TypeScript source.
+	$(NPX) prettier --write \
+		"web/src/**/*.css" \
+		"web/src/**/*.ts"
 
 fmt-md: ## Format the README.
-	cd web && npm exec --no -- prettier --write --prose-wrap never ../README.md ../docs/**/*.md
+	$(NPX) prettier --write --prose-wrap never $(PRETTIER_MD_SOURCES)
+
 
 check-format: ## Check Go formatting and patch whitespace.
 	@unformatted="$$(gofmt -l cmd internal themes web)"; \
