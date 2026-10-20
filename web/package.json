@@ -7,8 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
+    "check:docs": "node ../dev/check-frontend-docs.mjs",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test src/*.test.mjs && vitest run src/app.test.tsx",
+    "test": "node --test src/*.test.mjs && vitest run src/*.test.tsx",
     "test:e2e": "playwright test"
   },
   "dependencies": {

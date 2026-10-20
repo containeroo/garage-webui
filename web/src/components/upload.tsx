@@ -1,14 +1,20 @@
 import { errorMessage } from "../api";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { CircleAlert, LoaderCircle, UploadCloud, X } from "lucide-react";
-import { uploadObject, formatBytes, type TransferProgress } from "../s3";
+import { uploadObject, type TransferProgress } from "../s3";
+import { formatBinaryBytes as formatBytes } from "../lib/format";
 import { DialogPanel } from "./ui/dialog";
 import { Button } from "./ui/button";
 
+/** A selected file and the outcome of its current upload attempt. */
 type QueuedFile = {
+  /** Browser file handle used for streaming the upload. */
   file: File;
+  /** Complete object key, including any folder prefix. */
   key: string;
+  /** Current health or transfer state. */
   status: "pending" | "uploading" | "done" | "failed";
+  /** Failure message suitable for displaying beside the affected action. */
   error?: string;
 };
 
@@ -44,10 +50,15 @@ export function UploadDialog({
   onClose,
   onUploaded,
 }: {
+  /** Identifier or accessible alias of the bucket being managed. */
   bucketId: string;
+  /** Human-readable bucket label shown in the upload dialog. */
   bucketName: string;
+  /** Folder prefix initially selected for new uploads. */
   initialPrefix?: string;
+  /** Closes the dialog or editor owned by the parent view. */
   onClose: () => void;
+  /** Refreshes the listing after at least one file in the batch succeeds. */
   onUploaded: () => void;
 }) {
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -65,7 +76,9 @@ export function UploadDialog({
 
   useEffect(() => () => controller.current?.abort(), []);
 
+  /** addFiles appends selected files while preserving an active upload queue. */
   function addFiles(files: FileList | File[]) {
+    if (controller.current) return;
     const selected = Array.from(files);
     setQueue((current) => [
       ...current,
@@ -78,19 +91,22 @@ export function UploadDialog({
     setError("");
   }
 
+  /** dropped accepts a file drop and clears its visual drag state. */
   function dropped(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
     addFiles(event.dataTransfer.files);
   }
 
+  /** cancel aborts the active file and any remaining queued transfers. */
   function cancel() {
     controller.current?.abort();
   }
 
+  /** start uploads queued files sequentially and reports successful completion once per batch. */
   async function start() {
     if (
-      busy ||
+      controller.current ||
       !queue.some(
         (entry) => entry.status === "pending" || entry.status === "failed",
       )
@@ -139,7 +155,6 @@ export function UploadDialog({
         );
         pending[i] = { ...entry, status: "done" };
         anyUploaded = true;
-        onUploaded();
       } catch (cause) {
         pending[i] = {
           ...entry,
@@ -154,6 +169,7 @@ export function UploadDialog({
     if (current.signal.aborted && !anyUploaded) setError("uploads cancelled");
     controller.current = null;
     setBusy(false);
+    if (anyUploaded) onUploaded();
   }
 
   const completed = queue.filter((entry) => entry.status === "done").length;

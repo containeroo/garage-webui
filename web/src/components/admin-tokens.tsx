@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Plus,
   Copy,
@@ -11,14 +12,28 @@ import {
 import { allows, errorMessage, get, post, type Session } from "../api";
 import { DialogPanel } from "./ui/dialog";
 import { useQuestions } from "./ui/questions";
+/** A named or deployment-managed Garage admin token without its secret. */
 type Token = {
+  /** Stable Garage identifier for this resource. */
   id: string | null;
+  /** Human-readable resource label. */
   name: string;
+  /** Credential expiration timestamp; absent or null means no expiration. */
   expiration: string | null;
+  /** Whether Garage considers this credential expired. */
   expired: boolean;
+  /** Garage operations permitted by the admin token. */
   scope: string[];
 };
 const highPrivilegeScopes = ["CreateAdminToken", "UpdateAdminToken"];
+
+// grantsAdministration identifies scopes that can delegate full administrative access.
+function grantsAdministration(scope: string[]): boolean {
+  return (
+    scope.includes("*") ||
+    scope.some((operation) => highPrivilegeScopes.includes(operation))
+  );
+}
 
 const operations = [
   "AddBucketAlias",
@@ -73,7 +88,13 @@ const operations = [
   "UpdateClusterLayout",
   "UpdateKey",
 ];
-export function AdminTokens({ session }: { session: Session }) {
+/** AdminTokens lists, creates, edits, and revokes Garage administrative credentials. */
+export function AdminTokens({
+  session,
+}: {
+  /** Authenticated credential metadata and administrative scopes. */
+  session: Session;
+}) {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -85,17 +106,29 @@ export function AdminTokens({ session }: { session: Session }) {
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const { confirm } = useQuestions();
-  const load = () =>
-    get<Token[]>("ListAdminTokens")
-      .then((result) => {
-        setTokens(result);
-        setError("");
-      })
-      .catch((e) => setError(errorMessage(e)))
-      .finally(() => setLoading(false));
+  /** load retrieves the current view's data and reports unavailable results. */
+  const load = useCallback(
+    (signal?: AbortSignal) =>
+      get<Token[]>("ListAdminTokens", "", { signal })
+        .then((result) => {
+          if (signal?.aborted) return;
+          setTokens(result);
+          setError("");
+        })
+        .catch((e) => {
+          if (!signal?.aborted) setError(errorMessage(e));
+        })
+        .finally(() => {
+          if (!signal?.aborted) setLoading(false);
+        }),
+    [],
+  );
   useEffect(() => {
-    void load();
-  }, []);
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+  /** open initializes the admin-token editor from an existing token or empty defaults. */
   function open(token: Token | null) {
     setEditing(token);
     setName(token?.name || "");
@@ -111,6 +144,66 @@ export function AdminTokens({ session }: { session: Session }) {
   const visibleOperations = operations.filter((operation) =>
     operation.toLowerCase().includes(scopeFilter.toLowerCase().trim()),
   );
+
+  // revokeToken confirms token revocation and refreshes the administrative credential list.
+  async function revokeToken(token: Token) {
+    if (!token.id) return;
+    if (
+      !(await confirm(
+        `Revoke token “${token.name}”? Its sessions will lose access.`,
+      ))
+    )
+      return;
+
+    try {
+      await post("DeleteAdminToken", {}, `?id=${encodeURIComponent(token.id)}`);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }
+
+  // submitToken validates privileged scopes before saving the admin token and revealing any new secret.
+  async function submitToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (editing === undefined || (editing && !editing.id) || busy) return;
+    setBusy(true);
+    setError("");
+
+    try {
+      if (grantsAdministration(scope)) {
+        const accepted = await confirm(
+          "This token can grant full Garage administration permissions. Continue?",
+        );
+        if (!accepted) return;
+      }
+
+      const result = await post<
+        Token & {
+          /** New admin token returned only when Garage provides its secret. */
+          secretToken?: string;
+        }
+      >(
+        editing ? "UpdateAdminToken" : "CreateAdminToken",
+        {
+          name: name.trim(),
+          scope,
+          neverExpires: !expiration,
+          ...(expiration
+            ? { expiration: new Date(expiration + "Z").toISOString() }
+            : {}),
+        },
+        editing?.id ? `?id=${encodeURIComponent(editing.id)}` : "",
+      );
+      setSecret(result.secretToken || "");
+      setEditing(undefined);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
@@ -211,25 +304,7 @@ export function AdminTokens({ session }: { session: Session }) {
                       title="Revoke token"
                       aria-label={`Revoke ${token.name}`}
                       className="icon-button danger"
-                      onClick={async () => {
-                        if (
-                          !(await confirm(
-                            `Revoke token “${token.name}”? Its sessions will lose access.`,
-                          ))
-                        )
-                          return;
-
-                        try {
-                          await post(
-                            "DeleteAdminToken",
-                            {},
-                            `?id=${encodeURIComponent(token.id!)}`,
-                          );
-                          await load();
-                        } catch (cause) {
-                          setError(errorMessage(cause));
-                        }
-                      }}
+                      onClick={() => void revokeToken(token)}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -255,46 +330,7 @@ export function AdminTokens({ session }: { session: Session }) {
           title={editing ? "Edit admin token" : "Create admin token"}
           onClose={() => setEditing(undefined)}
         >
-          <form
-            className="token-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setBusy(true);
-              setError("");
-
-              try {
-                if (
-                  scope.includes("*") ||
-                  scope.some((value) => highPrivilegeScopes.includes(value))
-                ) {
-                  const accepted = await confirm(
-                    "This token can grant full Garage administration permissions. Continue?",
-                  );
-                  if (!accepted) return;
-                }
-
-                const result = await post<Token & { secretToken?: string }>(
-                  editing ? "UpdateAdminToken" : "CreateAdminToken",
-                  {
-                    name: name.trim(),
-                    scope,
-                    neverExpires: !expiration,
-                    ...(expiration
-                      ? { expiration: new Date(expiration + "Z").toISOString() }
-                      : {}),
-                  },
-                  editing ? `?id=${encodeURIComponent(editing.id!)}` : "",
-                );
-                setSecret(result.secretToken || "");
-                setEditing(undefined);
-                await load();
-              } catch (cause) {
-                setError(errorMessage(cause));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
+          <form className="token-form" onSubmit={submitToken}>
             <div className="token-form-scroll">
               {error && (
                 <p className="alert" role="alert">
@@ -431,6 +467,11 @@ export function AdminTokens({ session }: { session: Session }) {
           onClose={() => setSecret("")}
         >
           <div className="secret-panel">
+            {error && (
+              <p role="alert" className="object-error">
+                {error}
+              </p>
+            )}
             <p className="form-intro">
               This token is shown only once. Copy it and store it securely
               before closing.

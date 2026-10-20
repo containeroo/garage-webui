@@ -1,30 +1,58 @@
 import { errorMessage } from "../api";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Save } from "lucide-react";
-import { get, post } from "../api";
+import { allows, get, post, type Session } from "../api";
+import { localDateTime } from "../lib/format";
 
+/** A bucket and its effective permissions for the selected access key. */
 type KeyGrants = {
+  /** Stable Garage identifier for this resource. */
   id: string;
+  /** Globally visible names associated with the bucket. */
   globalAliases: string[];
-  permissions: { read: boolean; write: boolean; owner: boolean };
+  /** Effective permissions granted to this credential. */
+  permissions: {
+    /** Whether reading bucket objects is permitted. */
+    read: boolean;
+    /** Whether writing bucket objects is permitted. */
+    write: boolean;
+    /** Whether bucket owner operations are permitted. */
+    owner: boolean;
+  };
 };
+/** An access key's editable metadata and per-bucket grants. */
 type KeyDetails = {
+  /** Garage S3 access-key identifier, excluding its secret. */
   accessKeyId: string;
+  /** Human-readable resource label. */
   name: string;
+  /** Credential expiration timestamp; absent or null means no expiration. */
   expiration?: string | null;
+  /** Whether Garage considers this credential expired. */
   expired: boolean;
-  permissions: { createBucket: boolean };
+  /** Effective permissions granted to this credential. */
+  permissions: {
+    /** Whether the access key may create buckets. */
+    createBucket: boolean;
+  };
+  /** Buckets accessible to the current credential. */
   buckets: KeyGrants[];
 };
 
 // KeySettings edits a Garage access key without ever requesting its secret.
 export function KeySettings({
   keyId,
+  session,
   onChanged,
   onClose,
 }: {
+  /** Identifier of the access key being edited. */
   keyId: string;
+  /** Current credential scopes controlling key edits and individual bucket grants. */
+  session: Session;
+  /** Notifies the owner after authoritative resource data changes. */
   onChanged: () => void;
+  /** Closes the dialog or editor owned by the parent view. */
   onClose: () => void;
 }) {
   const [details, setDetails] = useState<KeyDetails>();
@@ -35,22 +63,33 @@ export function KeySettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function refresh() {
-    const result = await get<KeyDetails>(
-      "GetKeyInfo",
-      `?id=${encodeURIComponent(keyId)}`,
-    );
-    setDetails(result);
-    setName(result.name);
-    setNever(!result.expiration);
-    setExpiration(result.expiration ? result.expiration.slice(0, 16) : "");
-    setCreateBucket(result.permissions?.createBucket || false);
-  }
+  /** refresh retrieves the current view's authoritative data before updating its state. */
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      const result = await get<KeyDetails>(
+        "GetKeyInfo",
+        `?id=${encodeURIComponent(keyId)}`,
+        { signal },
+      );
+      if (signal?.aborted) return;
+      setDetails(result);
+      setName(result.name);
+      setNever(!result.expiration);
+      setExpiration(result.expiration ? localDateTime(result.expiration) : "");
+      setCreateBucket(result.permissions?.createBucket || false);
+    },
+    [keyId],
+  );
 
   useEffect(() => {
-    void refresh().catch((cause) => setError(errorMessage(cause)));
-  }, [keyId]);
+    const controller = new AbortController();
+    void refresh(controller.signal).catch((cause) => {
+      if (!controller.signal.aborted) setError(errorMessage(cause));
+    });
+    return () => controller.abort();
+  }, [refresh]);
 
+  /** save validates and persists access-key metadata before refreshing the editor. */
   async function save() {
     setBusy(true);
     setError("");
@@ -84,6 +123,7 @@ export function KeySettings({
     }
   }
 
+  /** updatePermissions changes a single bucket permission for the selected access key. */
   async function updatePermissions(
     bucket: KeyGrants,
     permission: "read" | "write" | "owner",
@@ -138,7 +178,7 @@ export function KeySettings({
                 Name
                 <input
                   value={name}
-                  disabled={busy}
+                  disabled={busy || !allows(session, "UpdateKey")}
                   onChange={(event) => setName(event.target.value)}
                 />
               </label>
@@ -151,7 +191,7 @@ export function KeySettings({
                   <input
                     type="checkbox"
                     checked={never}
-                    disabled={busy}
+                    disabled={busy || !allows(session, "UpdateKey")}
                     onChange={(event) => setNever(event.target.checked)}
                   />
                   Never expires
@@ -161,7 +201,7 @@ export function KeySettings({
                     aria-label="Expiration (local time)"
                     type="datetime-local"
                     value={expiration}
-                    disabled={busy}
+                    disabled={busy || !allows(session, "UpdateKey")}
                     onChange={(event) => setExpiration(event.target.value)}
                   />
                 )}
@@ -171,7 +211,7 @@ export function KeySettings({
               <input
                 type="checkbox"
                 checked={createBucket}
-                disabled={busy}
+                disabled={busy || !allows(session, "UpdateKey")}
                 onChange={(event) => setCreateBucket(event.target.checked)}
               />
               <span>
@@ -183,7 +223,7 @@ export function KeySettings({
               <button
                 type="button"
                 className="primary"
-                disabled={busy || !name.trim()}
+                disabled={busy || !name.trim() || !allows(session, "UpdateKey")}
                 onClick={() => void save()}
               >
                 <Save size={15} /> {busy ? "Saving…" : "Save key"}
@@ -220,7 +260,15 @@ export function KeySettings({
                         <input
                           type="checkbox"
                           checked={bucket.permissions[permission]}
-                          disabled={busy}
+                          disabled={
+                            busy ||
+                            !allows(
+                              session,
+                              bucket.permissions[permission]
+                                ? "DenyBucketKey"
+                                : "AllowBucketKey",
+                            )
+                          }
                           aria-label={`${permission} ${bucket.globalAliases?.[0] || bucket.id}`}
                           onChange={(event) =>
                             void updatePermissions(

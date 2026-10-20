@@ -10,10 +10,15 @@ export function DialogPanel({
   className,
   returnFocus,
 }: {
+  /** Human-readable theme or dialog title. */
   title: string;
+  /** Closes the dialog or editor owned by the parent view. */
   onClose: () => void;
+  /** Content rendered inside the provider or shared UI container. */
   children: ReactNode;
+  /** Optional CSS classes supplied by the containing view. */
   className?: string;
+  /** Element to refocus when a nested dialog closes. */
   returnFocus?: HTMLElement | null;
 }) {
   return (

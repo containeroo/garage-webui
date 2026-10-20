@@ -1,3 +1,4 @@
+import type { FormEvent } from "react";
 import { useQuestions } from "./ui/questions";
 import { Activity, HardDrive, Network, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
@@ -13,49 +14,110 @@ import {
   type Health,
   type Session,
 } from "../api";
-import { formatBytes } from "./usage";
+import { formatBytes } from "../lib/format";
 
-type Role = { zone: string; capacity: number | null; tags: string[] };
-type Node = {
-  id: string;
-  hostname?: string;
-  addr?: string;
-  garageVersion?: string;
-  isUp: boolean;
-  draining: boolean;
-  role?: Role | null;
+/** A node's assigned storage zone, capacity, and descriptive tags. */
+type ClusterRole = {
+  /** Failure-domain zone assigned to the node. */
+  zone: string;
+  /** Storage capacity in bytes; null marks a gateway node. */
+  capacity: number | null;
+  /** Descriptive tags attached to the node's layout role. */
+  tags: string[];
 };
-type Status = { layoutVersion: number; nodes: Node[] };
-type Layout = {
+/** A connected or known Garage node and its assigned layout role. */
+type ClusterNode = {
+  /** Stable Garage identifier for this resource. */
+  id: string;
+  /** Node hostname when advertised by Garage. */
+  hostname?: string;
+  /** Advertised RPC address of the node. */
+  addr?: string;
+  /** Garage software version advertised by the node. */
+  garageVersion?: string;
+  /** Whether this node is currently reachable. */
+  isUp: boolean;
+  /** Whether this node is draining stored data. */
+  draining: boolean;
+  /** Current node assignment; absent for an unassigned node. */
+  role?: ClusterRole | null;
+};
+/** The active cluster layout version and known node status. */
+type ClusterStatus = {
+  /** Version of the layout currently used by the cluster. */
+  layoutVersion: number;
+  /** Known cluster nodes and their connectivity metadata. */
+  nodes: ClusterNode[];
+};
+/** The active layout and staged assignments awaiting application. */
+type ClusterLayout = {
+  /** Layout version used to serialize assignment changes. */
   version: number;
+  /** Node assignments or removals waiting to be applied. */
   stagedRoleChanges: {
+    /** Stable Garage identifier for this resource. */
     id: string;
+    /** Failure-domain zone assigned to the node. */
     zone?: string;
+    /** Storage capacity in bytes; null marks a gateway node. */
     capacity?: number | null;
+    /** Descriptive tags attached to the node's layout role. */
     tags?: string[];
+    /** Whether this staged change removes the node assignment. */
     remove?: boolean;
   }[];
-  roles?: ({ id: string } & Role)[];
-  parameters?: { zoneRedundancy: "maximum" | { atLeast: number } };
-  stagedParameters?: { zoneRedundancy: "maximum" | { atLeast: number } } | null;
+  /** Storage and gateway roles in the current layout. */
+  roles?: ({
+    /** Stable Garage identifier for this resource. */
+    id: string;
+  } & ClusterRole)[];
+  /** Current layout-wide placement parameters. */
+  parameters?: {
+    /** Required number of failure-domain zones or maximum available redundancy. */
+    zoneRedundancy:
+      | "maximum"
+      | {
+          /** Minimum number of zones required for each partition. */
+          atLeast: number;
+        };
+  };
+  /** Placement parameters staged for the next layout version. */
+  stagedParameters?: {
+    /** Required number of failure-domain zones or maximum available redundancy. */
+    zoneRedundancy:
+      | "maximum"
+      | {
+          /** Minimum number of zones required for each partition. */
+          atLeast: number;
+        };
+  } | null;
 };
-type Preview = { error?: string; message?: string[] };
+/** Messages or an error returned when previewing staged layout changes. */
+type LayoutPreview = {
+  /** Failure message suitable for displaying beside the affected action. */
+  error?: string;
+  /** Explanatory messages returned by Garage or shown in a prompt. */
+  message?: string[];
+};
 
+/** Cluster presents node status and stages explicitly confirmed layout changes. */
 export function Cluster({
   session,
   health,
 }: {
+  /** Authenticated credential metadata and administrative scopes. */
   session: Session;
+  /** Latest cluster health summary when available to this credential. */
   health?: Health;
 }) {
   const { confirm } = useQuestions();
-  const [status, setStatus] = useState<Status>();
-  const [layout, setLayout] = useState<Layout>();
+  const [status, setStatus] = useState<ClusterStatus>();
+  const [layout, setLayout] = useState<ClusterLayout>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [address, setAddress] = useState("");
-  const [editing, setEditing] = useState<Node>();
-  const [removing, setRemoving] = useState<Node>();
+  const [editing, setEditing] = useState<ClusterNode>();
+  const [removing, setRemoving] = useState<ClusterNode>();
   const [removeError, setRemoveError] = useState("");
   const [zone, setZone] = useState("");
   const [capacity, setCapacity] = useState("");
@@ -64,19 +126,29 @@ export function Cluster({
   const [redundancy, setRedundancy] = useState("");
   const [gateway, setGateway] = useState(false);
   const [tags, setTags] = useState("");
-  const [preview, setPreview] = useState<Preview>();
+  const [preview, setPreview] = useState<LayoutPreview>();
   const [busy, setBusy] = useState(false);
+  /** refresh retrieves the current view's authoritative data before updating its state. */
   const refresh = useCallback(async () => {
-    const [s, l] = await Promise.all([
-      get<Status>("GetClusterStatus"),
-      get<Layout>("GetClusterLayout"),
+    const [statusResult, layoutResult] = await Promise.allSettled([
+      allows(session, "GetClusterStatus")
+        ? get<ClusterStatus>("GetClusterStatus")
+        : Promise.resolve(undefined),
+      allows(session, "GetClusterLayout")
+        ? get<ClusterLayout>("GetClusterLayout")
+        : Promise.resolve(undefined),
     ]);
-    setStatus(s);
-    setLayout(l);
-  }, []);
+    if (statusResult.status === "fulfilled") setStatus(statusResult.value);
+    if (layoutResult.status === "fulfilled") setLayout(layoutResult.value);
+    const failure = [statusResult, layoutResult].find(
+      (result) => result.status === "rejected",
+    );
+    if (failure?.status === "rejected") throw failure.reason;
+  }, [session]);
   useEffect(() => {
     refresh().catch((e) => setError(errorMessage(e)));
   }, [refresh]);
+  /** action runs a cluster mutation and refreshes the resulting layout and node status. */
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -90,7 +162,8 @@ export function Cluster({
       setBusy(false);
     }
   }
-  function edit(node: Node) {
+  /** edit initializes the node editor from its staged or active layout assignment. */
+  function edit(node: ClusterNode) {
     const staged = layout?.stagedRoleChanges.find(
       (change) => change.id === node.id && !change.remove,
     );
@@ -108,8 +181,142 @@ export function Cluster({
   const pending =
     !!layout &&
     (layout.stagedRoleChanges.length > 0 || !!layout.stagedParameters);
+  /** ratio formats a known count and total or a placeholder for unavailable health data. */
   const ratio = (value?: number, total?: number) =>
     value == null || total == null ? "—" : `${value} / ${total}`;
+  // connectNode connects the entered Garage RPC address and refreshes cluster membership.
+  function connectNode(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    void action(async () => {
+      const result = await post<
+        {
+          /** Whether Garage completed the requested operation. */
+          success: boolean;
+          /** Failure message suitable for displaying beside the affected action. */
+          error?: string;
+        }[]
+      >("ConnectClusterNodes", [address.trim()]);
+      if (!result[0]?.success)
+        throw new Error(result[0]?.error || "Connection failed");
+      setAddress("");
+      setNotice("Node connected.");
+    });
+  }
+
+  // stageRedundancy validates a zone-redundancy choice and stages it for the next layout version.
+  function stageRedundancy(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const value =
+      redundancy === "maximum" ? "maximum" : { atLeast: Number(redundancy) };
+    if (
+      typeof value !== "string" &&
+      (!Number.isSafeInteger(value.atLeast) || value.atLeast < 1)
+    ) {
+      setError("enter a positive number of zones.");
+      return;
+    }
+    void action(async () => {
+      await post("UpdateClusterLayout", {
+        parameters: { zoneRedundancy: value },
+      });
+      setPreview(undefined);
+      setNotice(
+        "Layout settings staged. Preview and apply the layout to activate them.",
+      );
+    });
+  }
+
+  // applyLayout applies staged layout changes only after the user's explicit confirmation.
+  async function applyLayout() {
+    if (!layout) return;
+
+    if (
+      await confirm(
+        "Apply all staged layout changes? This will change the cluster layout.",
+      )
+    )
+      void action(async () => {
+        await post("ApplyClusterLayout", {
+          version: layout.version + 1,
+        });
+        setPreview(undefined);
+        setNotice("Layout applied.");
+      });
+  }
+
+  // stageRemoval stages removal of the selected node and reports submission and refresh failures separately.
+  async function stageRemoval() {
+    if (!removing) return;
+
+    setBusy(true);
+    setRemoveError("");
+    try {
+      await post("UpdateClusterLayout", {
+        roles: [{ id: removing.id, remove: true }],
+      });
+      setRemoving(undefined);
+      setPreview(undefined);
+      setNotice(
+        "Node removal staged. Preview and apply the layout to activate it.",
+      );
+      await refresh().catch((e) =>
+        setError(`removal was staged, but refresh failed: ${errorMessage(e)}`),
+      );
+    } catch (e) {
+      setRemoveError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // stageAssignment validates node capacity and stages its storage or gateway role in the selected zone.
+  function stageAssignment(e: FormEvent<HTMLFormElement>) {
+    if (!editing) return;
+
+    e.preventDefault();
+    const bytes =
+      Number(capacity) * ({ MB: 1e6, GB: 1e9, TB: 1e12 }[unit] || 1);
+    if (!gateway && (!Number.isSafeInteger(bytes) || bytes <= 0)) {
+      setAssignmentError(
+        "Enter a valid positive capacity in the selected unit.",
+      );
+      return;
+    }
+    setAssignmentError("");
+    setBusy(true);
+    void (async () => {
+      try {
+        await post("UpdateClusterLayout", {
+          roles: [
+            {
+              id: editing.id,
+              zone: zone.trim(),
+              capacity: gateway ? null : bytes,
+              tags: tags
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+            },
+          ],
+        });
+        setEditing(undefined);
+        setPreview(undefined);
+        setNotice(
+          "Node assignment staged. Preview and apply the layout to activate it.",
+        );
+        await refresh().catch((e) =>
+          setError(
+            `assignment was staged, but refresh failed: ${errorMessage(e)}`,
+          ),
+        );
+      } catch (e) {
+        setAssignmentError(errorMessage(e));
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }
+
   return (
     <div className="cluster-page">
       {error && (
@@ -188,21 +395,7 @@ export function Cluster({
           <h2>Nodes</h2>
         </div>
         {allows(session, "ConnectClusterNodes") && (
-          <form
-            className="cluster-connect"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void action(async () => {
-                const result = await post<
-                  { success: boolean; error?: string }[]
-                >("ConnectClusterNodes", [address.trim()]);
-                if (!result[0]?.success)
-                  throw new Error(result[0]?.error || "Connection failed");
-                setAddress("");
-                setNotice("Node connected.");
-              });
-            }}
-          >
+          <form className="cluster-connect" onSubmit={connectNode}>
             <label>
               Connect a node{" "}
               <input
@@ -314,32 +507,7 @@ export function Cluster({
               )}
             </p>
             {allows(session, "UpdateClusterLayout") && (
-              <form
-                className="layout-settings"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const value =
-                    redundancy === "maximum"
-                      ? "maximum"
-                      : { atLeast: Number(redundancy) };
-                  if (
-                    typeof value !== "string" &&
-                    (!Number.isSafeInteger(value.atLeast) || value.atLeast < 1)
-                  ) {
-                    setError("enter a positive number of zones.");
-                    return;
-                  }
-                  void action(async () => {
-                    await post("UpdateClusterLayout", {
-                      parameters: { zoneRedundancy: value },
-                    });
-                    setPreview(undefined);
-                    setNotice(
-                      "Layout settings staged. Preview and apply the layout to activate them.",
-                    );
-                  });
-                }}
-              >
+              <form className="layout-settings" onSubmit={stageRedundancy}>
                 <label>
                   Zone redundancy{" "}
                   <select
@@ -403,7 +571,7 @@ export function Cluster({
                     }
                     onClick={() =>
                       action(async () => {
-                        const p = await post<Preview>(
+                        const p = await post<LayoutPreview>(
                           "PreviewClusterLayoutChanges",
                         );
                         setPreview(p);
@@ -414,20 +582,7 @@ export function Cluster({
                   </Button>
                   <Button
                     disabled={busy || !allows(session, "ApplyClusterLayout")}
-                    onClick={async () => {
-                      if (
-                        await confirm(
-                          "Apply all staged layout changes? This will change the cluster layout.",
-                        )
-                      )
-                        void action(async () => {
-                          await post("ApplyClusterLayout", {
-                            version: layout.version + 1,
-                          });
-                          setPreview(undefined);
-                          setNotice("Layout applied.");
-                        });
-                    }}
+                    onClick={applyLayout}
                   >
                     Apply layout
                   </Button>
@@ -489,32 +644,7 @@ export function Cluster({
               >
                 Cancel
               </Button>
-              <Button
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  setRemoveError("");
-                  try {
-                    await post("UpdateClusterLayout", {
-                      roles: [{ id: removing.id, remove: true }],
-                    });
-                    setRemoving(undefined);
-                    setPreview(undefined);
-                    setNotice(
-                      "Node removal staged. Preview and apply the layout to activate it.",
-                    );
-                    await refresh().catch((e) =>
-                      setError(
-                        `removal was staged, but refresh failed: ${errorMessage(e)}`,
-                      ),
-                    );
-                  } catch (e) {
-                    setRemoveError(errorMessage(e));
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
+              <Button disabled={busy} onClick={stageRemoval}>
                 Stage removal
               </Button>
             </div>
@@ -537,54 +667,7 @@ export function Cluster({
                 {assignmentError}
               </div>
             )}
-            <form
-              className="cluster-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const bytes =
-                  Number(capacity) *
-                  ({ MB: 1e6, GB: 1e9, TB: 1e12 }[unit] || 1);
-                if (!gateway && (!Number.isSafeInteger(bytes) || bytes <= 0)) {
-                  setAssignmentError(
-                    "Enter a valid positive capacity in the selected unit.",
-                  );
-                  return;
-                }
-                setAssignmentError("");
-                setBusy(true);
-                void (async () => {
-                  try {
-                    await post("UpdateClusterLayout", {
-                      roles: [
-                        {
-                          id: editing.id,
-                          zone: zone.trim(),
-                          capacity: gateway ? null : bytes,
-                          tags: tags
-                            .split(",")
-                            .map((t) => t.trim())
-                            .filter(Boolean),
-                        },
-                      ],
-                    });
-                    setEditing(undefined);
-                    setPreview(undefined);
-                    setNotice(
-                      "Node assignment staged. Preview and apply the layout to activate it.",
-                    );
-                    await refresh().catch((e) =>
-                      setError(
-                        `assignment was staged, but refresh failed: ${errorMessage(e)}`,
-                      ),
-                    );
-                  } catch (e) {
-                    setAssignmentError(errorMessage(e));
-                  } finally {
-                    setBusy(false);
-                  }
-                })();
-              }}
-            >
+            <form className="cluster-form" onSubmit={stageAssignment}>
               <label>
                 Zone
                 <input

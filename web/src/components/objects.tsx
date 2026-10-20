@@ -1,6 +1,6 @@
 import { useQuestions } from "./ui/questions";
 import { errorMessage } from "../api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -23,20 +23,51 @@ import { Empty } from "./storage";
 import {
   copyObject,
   deleteObject,
-  formatBytes,
   listObjects,
   signOperation,
   type ObjectItem,
   type ObjectPage,
 } from "../s3";
+import { formatBinaryBytes as formatBytes } from "../lib/format";
 
 const emptyPage: ObjectPage = { items: [], folders: [], nextToken: "" };
+
+// ObjectPreview renders only preview content belonging to the currently selected object.
+function ObjectPreview({
+  preview,
+  item,
+}: {
+  /** Authorized preview metadata, when a preview has been requested. */
+  preview?: Preview;
+  /** Object whose details and preview are currently selected. */
+  item: ObjectItem;
+}) {
+  if (preview?.key !== item.key) return <File size={48} strokeWidth={1.3} />;
+  switch (preview.kind) {
+    case "image":
+      return <img src={preview.url} alt={item.key} />;
+    case "video":
+      return <video src={preview.url} controls />;
+    case "audio":
+      return <audio src={preview.url} controls />;
+    case "text":
+      return <pre>{preview.content}</pre>;
+    default:
+      return <File size={48} strokeWidth={1.3} />;
+  }
+}
+/** An ordering available for objects on the current page. */
 type SortMode = "name" | "size" | "modified";
 
+/** The active object's signed preview and optional bounded text content. */
 type Preview = {
+  /** Short-lived authorized URL for this browser operation. */
   url: string;
+  /** Complete object key, including any folder prefix. */
   key: string;
+  /** Safe inline preview format, or an external-file fallback. */
   kind: "image" | "video" | "audio" | "text" | "external";
+  /** Fetched text content for a bounded inline preview. */
   content?: string;
 };
 
@@ -75,11 +106,17 @@ export function BucketObjects({
   onFolderChange,
   onUpload,
 }: {
+  /** Identifier or accessible alias of the bucket being managed. */
   bucketId: string;
+  /** Whether mutation controls should be offered; Garage still enforces actual permissions. */
   canDelete: boolean;
+  /** Whether direct S3 operations are configured for this deployment. */
   enabled: boolean;
+  /** Owner-controlled counter that invalidates the displayed listing. */
   refreshVersion: number;
+  /** Reports the newly selected folder prefix to the owner. */
   onFolderChange?: (prefix: string) => void;
+  /** Opens the file-upload dialog for the selected folder. */
   onUpload?: () => void;
 }) {
   const { confirm, prompt } = useQuestions();
@@ -98,6 +135,14 @@ export function BucketObjects({
   const [activeItem, setActiveItem] = useState<ObjectItem>();
   const [preview, setPreview] = useState<Preview>();
   const [version, setVersion] = useState(0);
+  const previewRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => previewRequest.current?.abort(), []);
+
+  // clearPreview cancels a preview belonging to a deselected object or folder.
+  function clearPreview() {
+    previewRequest.current?.abort();
+    setPreview(undefined);
+  }
 
   const listPrefix = prefix + appliedQuery;
   const ordered = useMemo(() => {
@@ -134,9 +179,10 @@ export function BucketObjects({
     return () => controller.abort();
   }, [load, token, refreshVersion, version]);
 
+  /** navigate changes folders and clears the previous page's selection and preview. */
   function navigate(folder: string) {
     setActiveItem(undefined);
-    setPreview(undefined);
+    clearPreview();
     setPrefix(folder);
     setAppliedQuery("");
     setQuery("");
@@ -144,19 +190,23 @@ export function BucketObjects({
     onFolderChange?.(folder);
   }
 
+  /** resetPage returns pagination and selection to the first page of the current listing. */
   function resetPage() {
     setToken("");
     setHistory([]);
     setSelected([]);
     setPage(emptyPage);
   }
+  /** refresh retrieves the current view's authoritative data before updating its state. */
   function refresh() {
     setVersion((old) => old + 1);
   }
+  /** displayedName removes the current folder prefix from an object's visible name. */
   function displayedName(key: string) {
     return key.startsWith(prefix) ? key.slice(prefix.length) : key;
   }
 
+  /** download obtains an authorized URL and starts the browser download. */
   async function download(key: string) {
     setError("");
     try {
@@ -167,17 +217,21 @@ export function BucketObjects({
     }
   }
 
+  /** openPreview signs an object preview and bounds inline text retrieval. */
   async function openPreview(item: ObjectItem) {
+    clearPreview();
+    const controller = new AbortController();
+    previewRequest.current = controller;
     setError("");
     try {
-      const signed = await signOperation(bucketId, "preview", {
-        key: item.key,
-      });
+      const signed = await signOperation(
+        bucketId,
+        "preview",
+        { key: item.key },
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
       const kind = previewKind(item.key);
-      if (kind === "external") {
-        setPreview({ key: item.key, url: signed.url, kind });
-        return;
-      }
       if (kind !== "text") {
         setPreview({ key: item.key, url: signed.url, kind });
         return;
@@ -186,20 +240,26 @@ export function BucketObjects({
         throw new Error(
           "text preview is limited to 1 MiB. Download the file instead.",
         );
-      const response = await fetch(signed.url, { credentials: "omit" });
+      const response = await fetch(signed.url, {
+        credentials: "omit",
+        signal: controller.signal,
+      });
       if (!response.ok)
         throw new Error(`preview failed (HTTP ${response.status})`);
+      const content = await response.text();
+      if (controller.signal.aborted) return;
       setPreview({
         key: item.key,
         url: signed.url,
         kind,
-        content: await response.text(),
+        content,
       });
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (!controller.signal.aborted) setError(errorMessage(cause));
     }
   }
 
+  /** remove confirms deletion and reports failures before refreshing the affected view. */
   async function remove(keys: string[]) {
     if (
       !keys.length ||
@@ -222,7 +282,7 @@ export function BucketObjects({
       }
       setSelected([]);
       setActiveItem(undefined);
-      setPreview(undefined);
+      clearPreview();
       resetPage();
       refresh();
       if (failures.length)
@@ -234,6 +294,7 @@ export function BucketObjects({
     }
   }
 
+  /** relocate copies or moves an object after validating the requested destination. */
   async function relocate(source: string, size: number, move: boolean) {
     const target = await prompt(
       `${move ? "Move / rename" : "Copy"} “${source}” to object key (same bucket):`,
@@ -252,7 +313,7 @@ export function BucketObjects({
       if (move) {
         await deleteObject(bucketId, source);
         setActiveItem(undefined);
-        setPreview(undefined);
+        clearPreview();
       }
       resetPage();
       refresh();
@@ -263,6 +324,7 @@ export function BucketObjects({
     }
   }
 
+  /** toggle adds or removes one object key from the current page selection. */
   function toggle(key: string) {
     setSelected((current) =>
       current.includes(key)
@@ -320,7 +382,7 @@ export function BucketObjects({
                   setAppliedQuery(query.trim());
                   resetPage();
                   setActiveItem(undefined);
-                  setPreview(undefined);
+                  clearPreview();
                   refresh();
                 }}
               >
@@ -466,7 +528,7 @@ export function BucketObjects({
                     className="explorer-name"
                     onClick={() => {
                       setActiveItem(item);
-                      setPreview(undefined);
+                      clearPreview();
                     }}
                   >
                     <File size={17} />
@@ -512,7 +574,7 @@ export function BucketObjects({
                     setHistory((tokens) => tokens.slice(0, -1));
                     setSelected([]);
                     setActiveItem(undefined);
-                    setPreview(undefined);
+                    clearPreview();
                   }}
                 >
                   Previous
@@ -526,7 +588,7 @@ export function BucketObjects({
                     setToken(page.nextToken);
                     setSelected([]);
                     setActiveItem(undefined);
-                    setPreview(undefined);
+                    clearPreview();
                   }}
                 >
                   Next
@@ -545,7 +607,7 @@ export function BucketObjects({
                   aria-label="Close object details"
                   onClick={() => {
                     setActiveItem(undefined);
-                    setPreview(undefined);
+                    clearPreview();
                   }}
                 >
                   <X size={16} />
@@ -555,21 +617,7 @@ export function BucketObjects({
             {activeItem ? (
               <>
                 <div className="explorer-preview">
-                  {preview?.key === activeItem.key &&
-                  preview.kind === "image" ? (
-                    <img src={preview.url} alt={activeItem.key} />
-                  ) : preview?.key === activeItem.key &&
-                    preview.kind === "video" ? (
-                    <video src={preview.url} controls />
-                  ) : preview?.key === activeItem.key &&
-                    preview.kind === "audio" ? (
-                    <audio src={preview.url} controls />
-                  ) : preview?.key === activeItem.key &&
-                    preview.kind === "text" ? (
-                    <pre>{preview.content}</pre>
-                  ) : (
-                    <File size={48} strokeWidth={1.3} />
-                  )}
+                  <ObjectPreview preview={preview} item={activeItem} />
                 </div>
                 <dl className="explorer-metadata">
                   <div>

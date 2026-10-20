@@ -1,5 +1,6 @@
+import type { FormEvent } from "react";
 import { errorMessage } from "./api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowLeft,
@@ -25,6 +26,7 @@ import { Button } from "./components/ui/button";
 import { UploadDialog } from "./components/upload";
 import { BucketObjects } from "./components/objects";
 import { BucketSettings } from "./components/bucket-settings";
+import { BucketPermissions } from "./components/bucket-permissions";
 import { Cluster } from "./components/cluster";
 import { Usage } from "./components/usage";
 import { KeySettings } from "./components/key-settings";
@@ -37,16 +39,17 @@ import {
   short,
   type Session,
   type Bucket,
-  type Key,
-  type Health,
-  type Details,
-  type Page,
+  type BucketDetails,
+  type WorkspacePage,
 } from "./api";
 import { Login } from "./login";
-import { formatBytes } from "./components/usage";
+import { formatBytes } from "./lib/format";
 import { Metric, BucketRows, Empty } from "./components/storage";
 import { Sidebar } from "./components/sidebar";
+import { useWorkspaceData } from "./hooks/use-workspace-data";
+import { pageTitle } from "./lib/navigation";
 
+/** App supplies the shared dialog context around the authenticated console. */
 export function App() {
   return (
     <QuestionProvider>
@@ -55,9 +58,11 @@ export function App() {
   );
 }
 
+/** AppContent loads the session and chooses sign-in or the authenticated workspace. */
 function AppContent() {
   const [session, setSession] = useState<Session>();
   const [error, setError] = useState("");
+  /** loadSession retrieves the current credential metadata and exposes connection failures. */
   const loadSession = useCallback(() => {
     setError("");
     request<Session>("api/session")
@@ -83,7 +88,7 @@ function AppContent() {
         </div>
       </div>
     );
-  if (!session.user) return <Login session={session} onLogin={setSession} />;
+  if (!session.user) return <Login onLogin={setSession} />;
   return (
     <Workspace
       key={session.user}
@@ -98,68 +103,62 @@ function Workspace({
   session,
   onSignedOut,
 }: {
+  /** Authenticated credential metadata and administrative scopes. */
   session: Session;
+  /** Clears authenticated workspace state after session revocation. */
   onSignedOut: () => void;
 }) {
   const { confirm } = useQuestions();
   const theme = useTheme();
-  const [page, setPage] = useState<Page>(
+  const [page, setPage] = useState<WorkspacePage>(
     session.mode === "admin" ? "overview" : "buckets",
   );
   const [usageTotals, setUsageTotals] = useState<{
+    /** Total stored object bytes. */
     bytes: number;
+    /** Total number of stored objects. */
     objects: number;
   }>();
-  const [health, setHealth] = useState<Health>();
-  const [buckets, setBuckets] = useState<Bucket[]>([]);
-  const [keys, setKeys] = useState<Key[]>([]);
-  const [bucketsLoaded, setBucketsLoaded] = useState(false);
-  const [keysLoaded, setKeysLoaded] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const {
+    health,
+    buckets,
+    keys,
+    bucketsLoaded,
+    keysLoaded,
+    loaded,
+    busy: loading,
+    error,
+    setError,
+    load,
+  } = useWorkspaceData(session);
+  const [mutating, setMutating] = useState(false);
+  const mutationPending = useRef(false);
+  const bucketRequest = useRef<AbortController | null>(null);
+  const busy = loading || mutating;
   const [modal, setModal] = useState<"bucket" | "key" | "grant" | null>(null);
-  const [details, setDetails] = useState<Details>();
+  const [details, setDetails] = useState<BucketDetails>();
   const [bucketTab, setBucketTab] = useState<
     "overview" | "permissions" | "browse"
   >("overview");
   const [createdKey, setCreatedKey] = useState("");
-  const [uploadBucket, setUploadBucket] = useState<Details>();
+  const [uploadBucket, setUploadBucket] = useState<BucketDetails>();
   const [objectsVersion, setObjectsVersion] = useState(0);
   const [uploadPrefix, setUploadPrefix] = useState("");
   const [editingKey, setEditingKey] = useState<string>();
 
-  const load = useCallback(async () => {
-    setBusy(true);
-    setError("");
-    const results = await Promise.allSettled([
-      allows(session, "GetClusterHealth")
-        ? get<Health>("GetClusterHealth")
-        : Promise.resolve(undefined),
-      session.mode === "s3" || allows(session, "ListBuckets")
-        ? get<Bucket[]>("ListBuckets")
-        : Promise.resolve([]),
-      allows(session, "ListKeys")
-        ? get<Key[]>("ListKeys")
-        : Promise.resolve([]),
-    ]);
-    if (results[0].status === "fulfilled") setHealth(results[0].value);
-    if (results[1].status === "fulfilled") setBuckets(results[1].value);
-    if (results[2].status === "fulfilled") setKeys(results[2].value);
-    setBucketsLoaded(results[1].status === "fulfilled");
-    setKeysLoaded(results[2].status === "fulfilled");
-    setLoaded(true);
-    const failure = results.find((result) => result.status === "rejected");
-    if (failure?.status === "rejected")
-      setError(
-        `could not load all Garage data: ${errorMessage(failure.reason)}`,
-      );
-    setBusy(false);
-  }, [session]);
-  useEffect(() => {
-    if (session?.user) void load();
-  }, [session, load]);
+  useEffect(() => () => bucketRequest.current?.abort(), []);
+
+  // closeBucket cancels pending detail loads before returning to workspace navigation.
+  function closeBucket() {
+    bucketRequest.current?.abort();
+    setDetails(undefined);
+  }
+
+  /** run executes a mutation and presents its failure in the owning view. */
   async function run(action: () => Promise<unknown>) {
+    if (mutationPending.current) return false;
+    mutationPending.current = true;
+    setMutating(true);
     try {
       setError("");
       await action();
@@ -169,25 +168,33 @@ function Workspace({
     } catch (e) {
       setError(errorMessage(e));
       return false;
+    } finally {
+      mutationPending.current = false;
+      setMutating(false);
     }
   }
+  /** showBucket loads the latest selected bucket and ignores cancelled detail requests. */
   async function showBucket(
     bucket: Bucket,
     tab: "overview" | "permissions" | "browse" = "overview",
   ) {
+    bucketRequest.current?.abort();
+    const controller = new AbortController();
+    bucketRequest.current = controller;
     setUploadPrefix("");
     setBucketTab(session.mode === "s3" ? "browse" : tab);
     try {
-      setDetails(
-        await get<Details>(
-          "GetBucketInfo",
-          `?id=${encodeURIComponent(bucket.id)}`,
-        ),
+      const bucketDetails = await get<BucketDetails>(
+        "GetBucketInfo",
+        `?id=${encodeURIComponent(bucket.id)}`,
+        { signal: controller.signal },
       );
+      if (!controller.signal.aborted) setDetails(bucketDetails);
     } catch (e) {
-      setError(errorMessage(e));
+      if (!controller.signal.aborted) setError(errorMessage(e));
     }
   }
+  /** remove confirms deletion and reports failures before refreshing the affected view. */
   async function remove(kind: "Bucket" | "Key", id: string, name: string) {
     if (
       !(await confirm(
@@ -200,6 +207,40 @@ function Workspace({
     );
     if (deleted && kind === "Bucket") setDetails(undefined);
   }
+  // submitResource creates a bucket or key, or grants bucket access, using the active workspace dialog.
+  async function submitResource(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    if (modal === "bucket")
+      await run(() => post("CreateBucket", { globalAlias: data.get("name") }));
+    if (modal === "key")
+      await run(async () => {
+        const result = await post<unknown>("CreateKey", {
+          name: data.get("name"),
+        });
+        setCreatedKey(JSON.stringify(result, null, 2));
+      });
+    if (modal === "grant" && details) {
+      await run(async () => {
+        await post("AllowBucketKey", {
+          bucketId: details.id,
+          accessKeyId: data.get("key"),
+          permissions: {
+            read: data.has("read"),
+            write: data.has("write"),
+            owner: data.has("owner"),
+          },
+        });
+        setDetails(
+          await get<BucketDetails>(
+            "GetBucketInfo",
+            `?id=${encodeURIComponent(details.id)}`,
+          ),
+        );
+      });
+    }
+  }
+
   return (
     <div className="shell">
       <Sidebar
@@ -208,7 +249,7 @@ function Workspace({
         health={health}
         onNavigate={(next) => {
           setPage(next);
-          setDetails(undefined);
+          closeBucket();
         }}
         onSignOut={async () => {
           try {
@@ -224,19 +265,7 @@ function Workspace({
           <div>
             <span className="crumb">Workspace</span>
             <ChevronRight size={14} />
-            <strong>
-              {page === "overview"
-                ? "Overview"
-                : page === "cluster"
-                  ? "Cluster"
-                  : page === "buckets"
-                    ? "Buckets"
-                    : page === "keys"
-                      ? "Access keys"
-                      : page === "tokens"
-                        ? "Admin tokens"
-                        : "My profile"}
-            </strong>
+            <strong>{pageTitle(page)}</strong>
           </div>
           <button
             className="icon-button"
@@ -252,19 +281,7 @@ function Workspace({
           {!details && (
             <div className="page-heading">
               <div>
-                <h1>
-                  {page === "overview"
-                    ? "Overview"
-                    : page === "cluster"
-                      ? "Cluster"
-                      : page === "buckets"
-                        ? "Buckets"
-                        : page === "keys"
-                          ? "Access keys"
-                          : page === "tokens"
-                            ? "Admin tokens"
-                            : "My profile"}
-                </h1>
+                <h1>{pageTitle(page)}</h1>
               </div>
               {(page === "buckets" || page === "keys") &&
                 allows(
@@ -452,7 +469,7 @@ function Workspace({
                               <button
                                 type="button"
                                 className="secondary"
-                                disabled={!allows(session, "UpdateKey")}
+                                disabled={!allows(session, "GetKeyInfo")}
                                 onClick={() => setEditingKey(key.id)}
                               >
                                 Edit
@@ -475,6 +492,7 @@ function Workspace({
                     <KeySettings
                       key={editingKey}
                       keyId={editingKey}
+                      session={session}
                       onChanged={() => void load()}
                       onClose={() => setEditingKey(undefined)}
                     />
@@ -489,10 +507,7 @@ function Workspace({
           )}
           {details && (
             <section className="panel bucket-details">
-              <button
-                className="text-button bucket-back"
-                onClick={() => setDetails(undefined)}
-              >
+              <button className="text-button bucket-back" onClick={closeBucket}>
                 <ArrowLeft size={16} /> Back to{" "}
                 {page === "overview" ? "overview" : "buckets"}
               </button>
@@ -542,7 +557,7 @@ function Workspace({
                 <BucketSettings
                   key={details.id}
                   bucket={details}
-                  canEdit={allows(session, "UpdateBucket")}
+                  session={session}
                   onChanged={(bucket) => {
                     setDetails(bucket);
                     void load();
@@ -550,123 +565,14 @@ function Workspace({
                 />
               )}
               {bucketTab === "permissions" && (
-                <div className="detail-section">
-                  <div className="detail-title">
-                    <div>
-                      <h3>Access permissions</h3>
-                    </div>
-                    {session.mode === "admin" && (
-                      <button
-                        className="secondary"
-                        onClick={() => setModal("grant")}
-                      >
-                        <Plus size={15} /> Add access
-                      </button>
-                    )}
-                  </div>
-                  {(details.keys || []).length === 0 ? (
-                    <Empty text="No keys have access" />
-                  ) : (
-                    details.keys.map((grant) => (
-                      <div className="grant" key={grant.accessKeyId}>
-                        <div className="grant-identity">
-                          <strong
-                            title={
-                              keys.find((key) => key.id === grant.accessKeyId)
-                                ?.name || grant.accessKeyId
-                            }
-                          >
-                            {keys.find((key) => key.id === grant.accessKeyId)
-                              ?.name || short(grant.accessKeyId)}
-                          </strong>
-                          <small title={grant.accessKeyId}>
-                            {grant.accessKeyId}
-                          </small>
-                        </div>
-                        <div className="grant-permissions">
-                          {(["read", "write", "owner"] as const).map(
-                            (permission) => (
-                              <label key={permission}>
-                                <input
-                                  type="checkbox"
-                                  aria-label={`${permission} permission for ${grant.accessKeyId}`}
-                                  checked={grant.permissions[permission]}
-                                  disabled={
-                                    !allows(
-                                      session,
-                                      grant.permissions[permission]
-                                        ? "DenyBucketKey"
-                                        : "AllowBucketKey",
-                                    ) || busy
-                                  }
-                                  onChange={async (event) => {
-                                    const enabled = event.target.checked;
-                                    await run(async () => {
-                                      await post(
-                                        enabled
-                                          ? "AllowBucketKey"
-                                          : "DenyBucketKey",
-                                        {
-                                          bucketId: details.id,
-                                          accessKeyId: grant.accessKeyId,
-                                          permissions: {
-                                            read: permission === "read",
-                                            write: permission === "write",
-                                            owner: permission === "owner",
-                                          },
-                                        },
-                                      );
-                                      setDetails(
-                                        await get<Details>(
-                                          "GetBucketInfo",
-                                          `?id=${encodeURIComponent(details.id)}`,
-                                        ),
-                                      );
-                                    });
-                                  }}
-                                />
-                                {permission}
-                              </label>
-                            ),
-                          )}
-                        </div>
-                        {session.mode === "admin" && (
-                          <button
-                            className="icon-button danger"
-                            title="Remove access"
-                            onClick={async () => {
-                              if (
-                                !(await confirm(
-                                  "Remove all permissions for this key?",
-                                ))
-                              )
-                                return;
-                              await run(async () => {
-                                await post("DenyBucketKey", {
-                                  bucketId: details.id,
-                                  accessKeyId: grant.accessKeyId,
-                                  permissions: {
-                                    read: true,
-                                    write: true,
-                                    owner: true,
-                                  },
-                                });
-                                setDetails(
-                                  await get<Details>(
-                                    "GetBucketInfo",
-                                    `?id=${encodeURIComponent(details.id)}`,
-                                  ),
-                                );
-                              });
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
+                <BucketPermissions
+                  key={details.id}
+                  bucket={details}
+                  keys={keys}
+                  session={session}
+                  onChanged={setDetails}
+                  onAddAccess={() => setModal("grant")}
+                />
               )}
               {bucketTab === "overview" && allows(session, "DeleteBucket") && (
                 <button
@@ -711,42 +617,7 @@ function Workspace({
               {error}
             </div>
           )}
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const data = new FormData(e.currentTarget);
-              if (modal === "bucket")
-                await run(() =>
-                  post("CreateBucket", { globalAlias: data.get("name") }),
-                );
-              if (modal === "key")
-                await run(async () => {
-                  const result = await post<unknown>("CreateKey", {
-                    name: data.get("name"),
-                  });
-                  setCreatedKey(JSON.stringify(result, null, 2));
-                });
-              if (modal === "grant" && details) {
-                await run(async () => {
-                  await post("AllowBucketKey", {
-                    bucketId: details.id,
-                    accessKeyId: data.get("key"),
-                    permissions: {
-                      read: data.has("read"),
-                      write: data.has("write"),
-                      owner: data.has("owner"),
-                    },
-                  });
-                  setDetails(
-                    await get<Details>(
-                      "GetBucketInfo",
-                      `?id=${encodeURIComponent(details.id)}`,
-                    ),
-                  );
-                });
-              }
-            }}
-          >
+          <form onSubmit={submitResource}>
             {modal !== "grant" ? (
               <label>
                 Name
@@ -795,7 +666,7 @@ function Workspace({
               >
                 Cancel
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={busy}>
                 {modal === "grant" ? "Grant access" : "Create"}
               </Button>
             </div>

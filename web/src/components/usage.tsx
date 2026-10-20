@@ -1,12 +1,8 @@
-import { useEffect, useState } from "react";
-import { get, short, type Bucket, type Details } from "../api";
+import { short, type Bucket } from "../api";
+import { useBucketUsage } from "../hooks/use-bucket-usage";
+import { formatBytes } from "../lib/format";
 
-export function formatBytes(value: number) {
-  if (value < 1000) return `${value} B`;
-  const unit = Math.min(Math.floor(Math.log(value) / Math.log(1000)), 4);
-  return `${(value / 1000 ** unit).toFixed(1)} ${["B", "kB", "MB", "GB", "TB"][unit]}`;
-}
-
+/** Usage loads bucket usage summaries and reports aggregate storage and object counts. */
 export function Usage({
   buckets,
   loaded,
@@ -15,52 +11,29 @@ export function Usage({
   onTotals,
   onViewAll,
 }: {
+  /** Buckets accessible to the current credential. */
   buckets: Bucket[];
+  /** Whether the initial resource list loaded successfully. */
   loaded: boolean;
+  /** Whether a request or mutation is currently in progress. */
   busy: boolean;
+  /** Opens the chosen bucket and optional detail tab. */
   onSelect: (bucket: Bucket) => void;
+  /** Navigates from the summary to the full bucket list. */
   onViewAll: () => void;
-  onTotals: (totals: { bytes: number; objects: number } | undefined) => void;
-}) {
-  const [data, setData] = useState<Details[]>();
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (!loaded || busy) return;
-    let cancelled = false;
-    setData(undefined);
-    onTotals(undefined);
-    setFailed(false);
-    Promise.all(
-      buckets.map((b) =>
-        get<Details>("GetBucketInfo", `?id=${encodeURIComponent(b.id)}`),
-      ),
-    )
-      .then((value) => {
-        if (
-          value.some(
-            (item) =>
-              !item ||
-              typeof item.id !== "string" ||
-              typeof item.bytes !== "number" ||
-              typeof item.objects !== "number",
-          )
-        )
-          throw new Error("invalid usage data");
-        if (!cancelled) {
-          setData(value);
-          onTotals({
-            bytes: value.reduce((sum, b) => sum + (b.bytes || 0), 0),
-            objects: value.reduce((sum, b) => sum + (b.objects || 0), 0),
-          });
+  /** Reports aggregate usage, or undefined while usage is unavailable. */
+  onTotals: (
+    totals:
+      | {
+          /** Total stored object bytes. */
+          bytes: number;
+          /** Total number of stored objects. */
+          objects: number;
         }
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [buckets, loaded, busy, onTotals]);
+      | undefined,
+  ) => void;
+}) {
+  const { data, failed } = useBucketUsage(buckets, loaded, busy, onTotals);
   const sorted = [...(data || [])].sort(
     (a, b) => (b.bytes || 0) - (a.bytes || 0),
   );

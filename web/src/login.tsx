@@ -1,16 +1,45 @@
+import type { FormEvent } from "react";
 import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Brand } from "./components/brand";
 import { errorMessage, request, type Session } from "./api";
+/** Login verifies Garage admin or S3 credentials and opens the resulting session. */
 export function Login({
   onLogin,
 }: {
-  session: Session;
+  /** Replaces session state after successful credential verification. */
   onLogin: (session: Session) => void;
 }) {
   const [kind, setKind] = useState("admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // submitLogin verifies the selected Garage credentials and retrieves the resulting session.
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const data = new FormData(event.currentTarget);
+    try {
+      await request("api/login", {
+        method: "POST",
+        body: JSON.stringify(
+          kind === "admin"
+            ? { kind, token: data.get("token") }
+            : {
+                kind,
+                accessKeyId: data.get("accessKeyId"),
+                secretAccessKey: data.get("secretAccessKey"),
+              },
+        ),
+      });
+      onLogin(await request<Session>("api/session"));
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="login-page">
       <div className="login-card">
@@ -40,34 +69,7 @@ export function Login({
             {error}
           </div>
         )}
-        <form
-          key={kind}
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setBusy(true);
-            setError("");
-            const data = new FormData(event.currentTarget);
-            try {
-              await request("api/login", {
-                method: "POST",
-                body: JSON.stringify(
-                  kind === "admin"
-                    ? { kind, token: data.get("token") }
-                    : {
-                        kind,
-                        accessKeyId: data.get("accessKeyId"),
-                        secretAccessKey: data.get("secretAccessKey"),
-                      },
-                ),
-              });
-              onLogin(await request<Session>("api/session"));
-            } catch (error) {
-              setError(errorMessage(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
+        <form key={kind} onSubmit={submitLogin}>
           {kind === "admin" ? (
             <label>
               Admin token

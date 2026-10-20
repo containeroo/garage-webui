@@ -1,10 +1,13 @@
 import type { ThemePreference } from "./components/theme-picker";
 import type { Session } from "./api";
+/** ProfileSettings displays credential metadata and session-specific appearance settings. */
 export function ProfileSettings({
   theme,
   session,
 }: {
+  /** Session appearance preference and its update controls. */
   theme: ThemePreference;
+  /** Authenticated credential metadata and administrative scopes. */
   session: Session;
 }) {
   return (

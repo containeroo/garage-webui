@@ -113,6 +113,7 @@ fmt-web: ## Format CSS and TypeScript source.
 	$(NPX) prettier --write \
 		"web/src/**/*.css" \
 		"web/src/**/*.ts"
+	$(NPX) prettier --write "web/src/**/*.tsx"
 
 fmt-md: ## Format the README.
 	$(NPX) prettier --write --prose-wrap never $(PRETTIER_MD_SOURCES)

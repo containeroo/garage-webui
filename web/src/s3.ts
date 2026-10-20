@@ -1,6 +1,7 @@
 import { request } from "./api";
 import { abortMultipart } from "./multipart";
 
+/** An object operation that the backend can authorize and sign. */
 export type S3Action =
   | "list"
   | "download"
@@ -15,33 +16,65 @@ export type S3Action =
   | "multipart-copy-part"
   | "multipart-copy-complete"
   | "multipart-copy-abort";
+/** A short-lived S3 request authorized for one object operation. */
 export type SignedOperation = {
+  /** Short-lived authorized URL for this browser operation. */
   url: string;
+  /** HTTP method that must be used with the signed URL. */
   method: "GET" | "POST" | "PUT" | "DELETE";
+  /** Signed URL validity duration in seconds. */
   expiresIn: number;
+  /** Encoded source object for a server-side copy. */
   copySource?: string;
+  /** Signed headers required for a multipart copy request. */
   copyHeaders?: Record<string, string>;
 };
-export type ObjectItem = { key: string; size: number; modified: string };
+/** An object's metadata from the current S3 listing page. */
+export type ObjectItem = {
+  /** Complete object key, including any folder prefix. */
+  key: string;
+  /** Object or file length in bytes. */
+  size: number;
+  /** Last modification timestamp returned by S3. */
+  modified: string;
+};
+/** A bounded S3 listing with folders and an optional next-page token. */
 export type ObjectPage = {
+  /** Object metadata entries on the current listing page. */
   items: ObjectItem[];
+  /** Common object-key prefixes representing child folders. */
   folders: string[];
+  /** Opaque continuation token; empty indicates the last page. */
   nextToken: string;
 };
+/** The active file's byte progress, throughput, and remaining duration. */
 export type TransferProgress = {
+  /** Number of bytes transferred for the active file. */
   loaded: number;
+  /** Total bytes expected for the active transfer. */
   total: number;
+  /** Average transfer throughput in bytes per second. */
   speed: number;
+  /** Estimated seconds remaining; null means insufficient progress. */
   eta: number | null;
 };
+/** Object identifiers and optional multipart parameters sent for signing. */
 export type OperationInput = {
+  /** Complete object key, including any folder prefix. */
   key?: string;
+  /** Object-key prefix restricting the operation. */
   prefix?: string;
+  /** Source object key for copy and move operations. */
   sourceKey?: string;
+  /** Opaque S3 listing position from the preceding page. */
   continuationToken?: string;
+  /** S3 identifier for the active multipart transfer. */
   uploadId?: string;
+  /** One-based multipart part number. */
   partNumber?: number;
+  /** Inclusive source byte offset for a copy part. */
   rangeStart?: number;
+  /** Inclusive final source byte offset for a copy part. */
   rangeEnd?: number;
 };
 
@@ -87,17 +120,16 @@ export function parseXML(xml: string): Document {
 // parseListPage parses a single paginated folder listing (not a full-bucket scan).
 export function parseListPage(xml: string): ObjectPage {
   const document = parseXML(xml);
-  const decode = (text: string) => decodeURIComponent(text);
   const items = Array.from(
     document.getElementsByTagNameNS("*", "Contents"),
   ).map((node) => ({
-    key: decode(nodeText(node, "Key")),
+    key: decodeURIComponent(nodeText(node, "Key")),
     size: Number(nodeText(node, "Size")),
     modified: nodeText(node, "LastModified"),
   }));
   const folders = Array.from(
     document.getElementsByTagNameNS("*", "CommonPrefixes"),
-  ).map((node) => decode(nodeText(node, "Prefix")));
+  ).map((node) => decodeURIComponent(nodeText(node, "Prefix")));
   const truncated =
     nodeText(document.documentElement, "IsTruncated") === "true";
   const nextToken = truncated
@@ -108,6 +140,7 @@ export function parseListPage(xml: string): ObjectPage {
   return { items, folders, nextToken };
 }
 
+/** listObjects fetches one signed S3 folder page directly from the browser. */
 export async function listObjects(
   bucketId: string,
   prefix: string,
@@ -135,8 +168,14 @@ function transfer(
   headers: Record<string, string> = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Upload cancelled", "AbortError"));
+      return;
+    }
     const xhr = new XMLHttpRequest();
+    /** abort cancels the active browser upload request. */
     const abort = () => xhr.abort();
+    /** finish resolves the pending prompt and releases its dialog state. */
     const finish = () => signal.removeEventListener("abort", abort);
     xhr.open(signed.method, signed.url);
     xhr.withCredentials = false;
@@ -219,7 +258,12 @@ export async function uploadObject(
     "UploadId",
   );
   if (!uploadId) throw new Error("garage returned no multipart upload ID");
-  const parts: { number: number; etag: string }[] = [];
+  const parts: {
+    /** One-based part number in the completion sequence. */
+    number: number;
+    /** Garage receipt used to complete an uploaded or copied part. */
+    etag: string;
+  }[] = [];
   const chunk = partSize(file.size);
   try {
     for (
@@ -243,7 +287,7 @@ export async function uploadObject(
         );
       parts.push({ number, etag });
     }
-    const xml = `<CompleteMultipartUpload>${parts.map(({ number, etag }) => `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXML(etag)}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
+    const xml = completionXML(parts);
     const signed = await signOperation(
       bucketId,
       "multipart-complete",
@@ -293,6 +337,7 @@ function escapeXML(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/** deleteObject requests authorization and deletes one S3 object directly. */
 export async function deleteObject(
   bucketId: string,
   key: string,
@@ -354,7 +399,12 @@ async function copyMultipart(
     "UploadId",
   );
   if (!uploadId) throw new Error("garage returned no copy upload ID");
-  const parts: { number: number; etag: string }[] = [];
+  const parts: {
+    /** One-based part number in the completion sequence. */
+    number: number;
+    /** Garage receipt used to complete an uploaded or copied part. */
+    etag: string;
+  }[] = [];
   const chunk = partSize(size);
   try {
     for (let start = 0, number = 1; start < size; start += chunk, number++) {
@@ -379,7 +429,7 @@ async function copyMultipart(
       if (!etag) throw new Error("garage did not return a copy-part ETag");
       parts.push({ number, etag });
     }
-    const body = `<CompleteMultipartUpload>${parts.map(({ number, etag }) => `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXML(etag)}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
+    const body = completionXML(parts);
     const finish = await signOperation(bucketId, "multipart-copy-complete", {
       ...input,
       uploadId,
@@ -413,13 +463,18 @@ async function copyMultipart(
   }
 }
 
-export function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "—";
-  if (value < 1024) return `${Math.round(value)} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  const index = Math.min(
-    Math.floor(Math.log(value) / Math.log(1024)) - 1,
-    units.length - 1,
+// completionXML encodes the ordered part receipts shared by multipart uploads and copies.
+function completionXML(
+  parts: {
+    /** One-based part number in the completion sequence. */
+    number: number;
+    /** Garage receipt used to complete an uploaded or copied part. */
+    etag: string;
+  }[],
+): string {
+  const receipts = parts.map(
+    ({ number, etag }) =>
+      `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXML(etag)}</ETag></Part>`,
   );
-  return `${(value / 1024 ** (index + 1)).toFixed(1)} ${units[index]}`;
+  return `<CompleteMultipartUpload>${receipts.join("")}</CompleteMultipartUpload>`;
 }

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { short, type Bucket } from "../api";
 
+/** Metric renders a labeled workspace summary with an optional health indicator. */
 export function Metric({
   icon,
   label,
@@ -15,10 +16,15 @@ export function Metric({
   detail,
   highlight = false,
 }: {
+  /** Decorative icon associated with the displayed metric. */
   icon: ReactNode;
+  /** Visible descriptive label for the value. */
   label: string;
+  /** Formatted value displayed by the metric. */
   value: string;
+  /** Optional context or recovery guidance beneath the main text. */
   detail?: string;
+  /** Whether the metric should receive a positive health indicator. */
   highlight?: boolean;
 }) {
   return (
@@ -35,6 +41,7 @@ export function Metric({
     </div>
   );
 }
+/** BucketRows renders loading, empty, and navigable bucket-list states. */
 export function BucketRows({
   buckets,
   onSelect,
@@ -42,10 +49,15 @@ export function BucketRows({
   loading,
   browseOnly = false,
 }: {
+  /** Buckets accessible to the current credential. */
   buckets: Bucket[];
+  /** Opens the chosen bucket and optional detail tab. */
   onSelect: (b: Bucket, tab?: "overview" | "permissions" | "browse") => void;
+  /** Whether the initial resource list loaded successfully. */
   loaded: boolean;
+  /** Whether the list is currently awaiting a response. */
   loading: boolean;
+  /** Whether bucket actions are restricted to object browsing. */
   browseOnly?: boolean;
 }) {
   if (!loaded)
@@ -110,7 +122,16 @@ export function BucketRows({
     </div>
   );
 }
-export function Empty({ text, detail }: { text: string; detail?: string }) {
+/** Empty presents a consistent no-data state with optional recovery guidance. */
+export function Empty({
+  text,
+  detail,
+}: {
+  /** Primary message for an empty or unavailable-data state. */
+  text: string;
+  /** Optional context or recovery guidance beneath the main text. */
+  detail?: string;
+}) {
   return (
     <div className="empty">
       <Box size={22} />

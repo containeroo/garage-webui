@@ -133,14 +133,7 @@ nav button.active {
   align-items: center;
   margin-bottom: 28px;
 }
-.eyebrow {
-  color: var(--theme-text-tertiary, #71717a);
-  font-size: 10px;
-  letter-spacing: 1px;
-}
-.eyebrow span {
-  background: var(--theme-text-tertiary, #71717a);
-}
+
 h1,
 h2,
 h3 {
@@ -286,9 +279,7 @@ h3 {
   justify-content: flex-end;
   gap: 8px;
 }
-.row-button:hover {
-  background: var(--theme-surface-elevated, #fafafa);
-}
+
 .table .bucket-columns {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.7fr) auto;
 }
@@ -371,9 +362,7 @@ code {
 .empty span {
   color: var(--theme-text-tertiary, #71717a);
 }
-.footer {
-  color: var(--theme-muted, #a1a1aa);
-}
+
 .alert {
   background: #fef2f2;
   border-color: #fecaca;
@@ -447,9 +436,6 @@ input[type="checkbox"] {
 }
 .splash {
   color: var(--theme-text-tertiary, #71717a);
-}
-.token-row {
-  border-color: var(--theme-border, #e4e4e7);
 }
 
 @media (max-width: 1050px) {
@@ -712,12 +698,7 @@ input[type="checkbox"] {
   gap: 16px;
   max-width: 520px;
 }
-.cluster-assignment .cluster-panel-body > p {
-  margin: 0 0 18px;
-  color: var(--theme-text-tertiary, #71717a);
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
+
 .cluster-form label.cluster-checkbox {
   display: flex;
   align-items: center;

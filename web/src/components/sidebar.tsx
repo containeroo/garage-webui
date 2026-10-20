@@ -7,8 +7,9 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-react";
-import { allows, type Health, type Page, type Session } from "../api";
+import { allows, type Health, type WorkspacePage, type Session } from "../api";
 import { Brand } from "./brand";
+import { canVisitPage } from "../lib/navigation";
 
 // Sidebar contains the main navigation and the current account.
 export function Sidebar({
@@ -18,10 +19,15 @@ export function Sidebar({
   onNavigate,
   onSignOut,
 }: {
+  /** Authenticated credential metadata and administrative scopes. */
   session: Session;
-  page: Page;
+  /** Currently selected workspace destination. */
+  page: WorkspacePage;
+  /** Latest cluster health summary when available to this credential. */
   health?: Health;
-  onNavigate: (page: Page) => void;
+  /** Changes the workspace destination and clears selected details. */
+  onNavigate: (page: WorkspacePage) => void;
+  /** Requests session revocation and returns to the sign-in view. */
   onSignOut: () => void;
 }) {
   return (
@@ -37,13 +43,7 @@ export function Sidebar({
             ["keys", KeyRound, "Access keys"],
           ] as const
         )
-          .filter(
-            ([id]) =>
-              id === "buckets" ||
-              (id === "overview" && session.mode === "admin") ||
-              (id === "cluster" && allows(session, "GetClusterStatus")) ||
-              (id === "keys" && allows(session, "ListKeys")),
-          )
+          .filter(([id]) => canVisitPage(session, id))
           .map(([id, Icon, label]) => (
             <button
               key={id}
@@ -105,11 +105,9 @@ export function Sidebar({
               <small>{session.mode}</small>
             </span>
           </button>
-          {
-            <button title="Sign out" aria-label="Sign out" onClick={onSignOut}>
-              <LogOut size={16} />
-            </button>
-          }
+          <button title="Sign out" aria-label="Sign out" onClick={onSignOut}>
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </aside>

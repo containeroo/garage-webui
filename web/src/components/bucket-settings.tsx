@@ -2,8 +2,15 @@ import { useQuestions } from "./ui/questions";
 import { errorMessage } from "../api";
 import { useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
-import { get, post, type Details, type LifecycleRule } from "../api";
-import { formatBytes } from "../s3";
+import {
+  allows,
+  get,
+  post,
+  type BucketDetails,
+  type LifecycleRule,
+  type Session,
+} from "../api";
+import { formatBinaryBytes as formatBytes } from "../lib/format";
 
 // nonnegativeLimit parses an optional numeric limit without accidental coercion.
 function nonnegativeLimit(value: string): number | null {
@@ -17,13 +24,17 @@ function nonnegativeLimit(value: string): number | null {
 // BucketSettings groups the Garage Admin API's bucket configuration operations.
 export function BucketSettings({
   bucket,
-  canEdit,
+  session,
   onChanged,
 }: {
-  bucket: Details;
-  canEdit: boolean;
-  onChanged: (bucket: Details) => void;
+  /** Current bucket details supplied by the owning workspace. */
+  bucket: BucketDetails;
+  /** Authenticated credential metadata and administrative scopes. */
+  session: Session;
+  /** Notifies the owner after authoritative resource data changes. */
+  onChanged: (bucket: BucketDetails) => void;
 }) {
+  const canEdit = allows(session, "UpdateBucket");
   const { confirm } = useQuestions();
   const [size, setSize] = useState(
     bucket.quotas?.maxSize == null ? "" : String(bucket.quotas.maxSize),
@@ -50,6 +61,7 @@ export function BucketSettings({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  /** apply saves a bucket mutation and refreshes the authoritative bucket details. */
   async function apply(operation: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     setError("");
@@ -57,7 +69,7 @@ export function BucketSettings({
     try {
       await operation();
       onChanged(
-        await get<Details>(
+        await get<BucketDetails>(
           "GetBucketInfo",
           `?id=${encodeURIComponent(bucket.id)}`,
         ),
@@ -72,10 +84,12 @@ export function BucketSettings({
     }
   }
 
+  /** update submits editable configuration fields for the current bucket. */
   function update(fields: Record<string, unknown>) {
     return post("UpdateBucket", fields, `?id=${encodeURIComponent(bucket.id)}`);
   }
 
+  /** addRule validates and saves a uniquely named lifecycle rule. */
   async function addRule() {
     try {
       const expiration = nonnegativeLimit(expireDays);
@@ -103,11 +117,25 @@ export function BucketSettings({
     }
   }
 
+  /** removeRule confirms deletion and persists the remaining lifecycle rules. */
   async function removeRule(index: number) {
     if (!(await confirm("Remove this lifecycle rule?"))) return;
     const updated = rules.filter((_, current) => current !== index);
     if (await apply(() => update({ lifecycleRules: updated })))
       setRules(updated);
+  }
+
+  // saveLimits validates optional byte and object quotas before saving the bucket limits.
+  async function saveLimits() {
+    try {
+      const quotas = {
+        maxSize: nonnegativeLimit(size),
+        maxObjects: nonnegativeLimit(count),
+      };
+      void apply(() => update({ quotas }));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
   }
 
   return (
@@ -148,21 +176,7 @@ export function BucketSettings({
           objects.
         </small>
         {canEdit && (
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={async () => {
-              try {
-                const quotas = {
-                  maxSize: nonnegativeLimit(size),
-                  maxObjects: nonnegativeLimit(count),
-                };
-                void apply(() => update({ quotas }));
-              } catch (cause) {
-                setError(errorMessage(cause));
-              }
-            }}
-          >
+          <button className="secondary" disabled={busy} onClick={saveLimits}>
             <Save size={14} /> Save limits
           </button>
         )}
@@ -172,7 +186,7 @@ export function BucketSettings({
         {(bucket.globalAliases || []).map((value) => (
           <div className="object-toolbar" key={value}>
             <code>{value}</code>
-            {canEdit && (
+            {allows(session, "RemoveBucketAlias") && (
               <button
                 className="icon-button danger"
                 title="Remove alias"
@@ -192,7 +206,7 @@ export function BucketSettings({
             )}
           </div>
         ))}
-        {canEdit && (
+        {allows(session, "AddBucketAlias") && (
           <div className="object-toolbar">
             <input
               value={alias}

@@ -227,21 +227,7 @@ nav button.active {
   gap: 20px;
   margin-bottom: 30px;
 }
-.eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-  color: #618b76;
-  letter-spacing: 1.5px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.eyebrow span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #65b78b;
-}
+
 h1,
 h2,
 h3,
@@ -429,9 +415,7 @@ h3 {
   font-size: 12px;
   min-height: 61px;
 }
-.row-button:hover {
-  background: #fafcfb;
-}
+
 .item-name {
   display: flex;
   align-items: center;
@@ -529,14 +513,7 @@ code {
 .empty span {
   font-size: 11px;
 }
-.footer {
-  margin-top: 42px;
-  display: flex;
-  justify-content: space-between;
-  color: #b5c0b8;
-  font-size: 10px;
-  letter-spacing: 0.4px;
-}
+
 .alert {
   white-space: pre-line;
   border: 1px solid #efd9d2;
@@ -809,9 +786,6 @@ input::placeholder {
   .metric {
     padding: 15px;
   }
-  .footer {
-    gap: 10px;
-  }
 }
 .settings-panel {
   margin-bottom: 20px;
@@ -822,12 +796,7 @@ input::placeholder {
   line-height: 1.5;
   padding: 0 24px 20px;
 }
-.settings-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
+
 .settings-form {
   display: flex;
   flex-direction: column;
@@ -852,22 +821,7 @@ input::placeholder {
 }
 
 /* Browser-to-S3 transfer status */
-.detail-upload {
-  padding: 20px 24px;
-  display: flex;
-  gap: 12px;
-  flex-direction: column;
-  border-bottom: 1px solid var(--border, #e1e5e5);
-}
-.detail-upload .primary {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.detail-upload small {
-  color: var(--muted, #64748b);
-}
+
 .upload-dialog {
   display: flex;
   flex-direction: column;
@@ -881,11 +835,7 @@ input::placeholder {
 .upload-dialog input[type="file"] {
   max-width: 100%;
 }
-.upload-size {
-  font-size: 0.875rem;
-  opacity: 0.7;
-  margin: -8px 0 0;
-}
+
 .upload-progress {
   display: flex;
   flex-direction: column;
@@ -933,34 +883,7 @@ input::placeholder {
 .bucket-objects .detail-title {
   align-items: flex-start;
 }
-.object-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border, #e1e5e5);
-}
-.object-file-icon {
-  flex: none;
-  color: var(--muted, #64748b);
-}
-.object-info {
-  flex: 1;
-  min-width: 0;
-}
-.object-info strong {
-  display: block;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-}
-.object-info small {
-  display: block;
-  color: var(--muted, #64748b);
-  margin-top: 4px;
-}
-.object-row .icon-button {
-  flex-shrink: 0;
-}
+
 .object-loading {
   display: flex;
   align-items: center;
@@ -1017,48 +940,7 @@ input::placeholder {
   overflow-wrap: anywhere;
   flex: 1;
 }
-.object-breadcrumb {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  color: var(--muted, #64748b);
-}
-.object-folder {
-  background: transparent;
-  border: 0;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
-}
-.object-folder strong {
-  overflow-wrap: anywhere;
-}
-.object-row input[type="checkbox"] {
-  flex: 0 0 auto;
-}
-.object-preview {
-  padding: 12px;
-  border: 1px solid var(--border, #e1e5e5);
-  margin-top: 14px;
-  border-radius: 8px;
-}
-.object-preview img,
-.object-preview video {
-  display: block;
-  max-width: 100%;
-  max-height: 360px;
-}
-.object-preview pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 360px;
-  overflow: auto;
-  font-size: 12px;
-}
-.object-preview audio {
-  max-width: 100%;
-}
+
 .bucket-setting-group {
   display: flex;
   flex-direction: column;
@@ -1134,12 +1016,6 @@ input::placeholder {
   color: var(--muted, #64748b);
 }
 @media (max-width: 700px) {
-  .object-row {
-    flex-wrap: wrap;
-  }
-  .object-info {
-    flex-basis: 55%;
-  }
 }
 
 .token-scopes {

@@ -25,7 +25,10 @@ export function Button({
   asChild = false,
   ...props
 }: ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & { asChild?: boolean }) {
+  VariantProps<typeof buttonVariants> & {
+    /** Whether the child element receives the shared button appearance. */
+    asChild?: boolean;
+  }) {
   const Component = asChild ? Slot : "button";
   return (
     <Component
