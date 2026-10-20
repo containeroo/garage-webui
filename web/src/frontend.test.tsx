@@ -19,6 +19,7 @@ import { Cluster } from "./components/cluster";
 import { BucketSettings } from "./components/bucket-settings";
 import { BucketObjects } from "./components/objects";
 import { UploadDialog } from "./components/upload";
+import { Button } from "./components/ui/button";
 
 const session: Session = {
   mode: "admin",
@@ -35,6 +36,32 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+test("shared buttons use the theme-aware action styles", () => {
+  render(
+    <>
+      <Button disabled>Confirm</Button>
+      <Button variant="outline">Cancel</Button>
+      <Button asChild>
+        <a href="#details">View details</a>
+      </Button>
+    </>,
+  );
+
+  const confirm = screen.getByRole("button", { name: "Confirm" });
+  expect(confirm.classList.contains("primary")).toBe(true);
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  expect(
+    screen
+      .getByRole("button", { name: "Cancel" })
+      .classList.contains("secondary"),
+  ).toBe(true);
+  expect(
+    screen
+      .getByRole("link", { name: "View details" })
+      .classList.contains("primary"),
+  ).toBe(true);
 });
 
 test("bounds usage requests and only publishes complete aggregate totals", async () => {

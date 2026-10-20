@@ -5,13 +5,12 @@ import { cn } from "../../lib/utils";
 
 // buttonVariants defines the shared console button styles.
 const buttonVariants = cva(
-  "inline-flex min-h-9 items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex min-h-9 items-center justify-center gap-2 text-sm font-medium disabled:pointer-events-none",
   {
     variants: {
       variant: {
-        default: "bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700",
-        outline:
-          "border border-zinc-200 bg-white px-4 py-2 text-zinc-900 hover:bg-zinc-100",
+        default: "primary",
+        outline: "secondary",
       },
     },
     defaultVariants: { variant: "default" },

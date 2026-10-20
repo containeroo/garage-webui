@@ -76,11 +76,19 @@ nav button {
   font-size: 13px;
   font-weight: 500;
   padding: 10px 12px;
+  border-radius: 10px;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 nav button:hover,
 nav button.active {
   color: var(--theme-text, #18181b);
-  background: var(--theme-surface-hover, #e9e9ed);
+  background: color-mix(
+    in srgb,
+    var(--theme-accent, #5b5bd6) 8%,
+    var(--theme-surface, #fff)
+  );
 }
 nav button.active {
   font-weight: 600;
@@ -163,28 +171,56 @@ h3 {
 .primary,
 .secondary {
   min-height: 38px;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.4;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 .primary {
-  background: var(--theme-text, #18181b);
-  color: var(--theme-surface, #fff);
+  border-color: color-mix(
+    in srgb,
+    var(--theme-accent, #5b5bd6) 30%,
+    var(--theme-border, #e4e4e7)
+  );
+  background: color-mix(
+    in srgb,
+    var(--theme-accent, #5b5bd6) 12%,
+    var(--theme-surface, #fff)
+  );
+  color: var(--theme-text, #18181b);
 }
 .primary:hover {
-  background: var(--theme-text-secondary, #3f3f46);
+  border-color: color-mix(
+    in srgb,
+    var(--theme-accent, #5b5bd6) 50%,
+    var(--theme-border, #e4e4e7)
+  );
+  background: color-mix(
+    in srgb,
+    var(--theme-accent, #5b5bd6) 20%,
+    var(--theme-surface, #fff)
+  );
 }
 .secondary {
   border-color: var(--theme-border, #e4e4e7);
-  color: var(--theme-text, #27272a);
+  color: var(--theme-text-secondary, #3d4652);
   background: var(--theme-surface, #fff);
 }
 .secondary:hover {
   background: var(--theme-surface-elevated, #f4f4f5);
 }
 .icon-button {
-  color: var(--theme-text-tertiary, #71717a);
+  color: var(--theme-text-secondary, #52525b);
+  border-radius: 9px;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 .icon-button:hover {
   background: var(--theme-surface-elevated, #f4f4f5);
@@ -194,9 +230,37 @@ h3 {
   opacity: 0.55;
   cursor: wait;
 }
+.danger {
+  color: var(--theme-danger, #b91c1c);
+}
 .danger:hover {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--theme-danger, #b91c1c);
+  background: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 9%,
+    var(--theme-surface, #fff)
+  );
+}
+.primary.danger,
+.secondary.danger {
+  border-color: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 25%,
+    var(--theme-border, #e4e4e7)
+  );
+  background: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 5%,
+    var(--theme-surface, #fff)
+  );
+}
+.primary.danger:hover,
+.secondary.danger:hover {
+  background: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 12%,
+    var(--theme-surface, #fff)
+  );
 }
 .metrics {
   gap: 16px;
@@ -204,7 +268,7 @@ h3 {
 .metric,
 .panel {
   border: 1px solid var(--theme-border, #e4e4e7);
-  border-radius: 9px;
+  border-radius: 12px;
   box-shadow: 0 1px 2px #00000008;
 }
 .metric {
@@ -377,11 +441,19 @@ code {
   border-color: var(--theme-border, #e4e4e7);
 }
 .delete-bucket {
-  color: #b91c1c;
-  border-color: #fecaca;
+  color: var(--theme-danger, #b91c1c);
+  border-color: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 25%,
+    var(--theme-border, #e4e4e7)
+  );
 }
 .delete-bucket:hover {
-  background: #fef2f2;
+  background: color-mix(
+    in srgb,
+    var(--theme-danger, #b91c1c) 9%,
+    var(--theme-surface, #fff)
+  );
 }
 .modal-overlay {
   position: fixed;
