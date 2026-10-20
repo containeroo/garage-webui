@@ -28,3 +28,14 @@ func TestCacheScopesAndInvalidation(t *testing.T) {
 		t.Fatal("deleted bucket key is still cached")
 	}
 }
+
+// TestProviderRequiresCache makes the constructor contract explicit.
+func TestProviderRequiresCache(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("provider accepted a nil signing cache")
+		}
+	}()
+
+	New(nil, nil, "http://localhost:8080", nil, "admin-secret")
+}

@@ -53,7 +53,7 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		provider = credentials.NewWithCache(client, f.store, f.publicURL, f.cache, id.Credential.Token)
+		provider = credentials.New(client, f.store, f.publicURL, f.cache, id.Credential.Token)
 		buckets = client
 	case "s3":
 		provider = sessionKeys{credential: signing.Credential{

@@ -252,7 +252,7 @@ func managerForTest(t *testing.T, state *fakeGarage, store *memoryKeyStore) *Man
 		t.Fatal(err)
 	}
 
-	manager, err := NewManager(credentials.New(client, store, "http://localhost:8080"), "http://localhost:3900", "garage", "http://localhost:8080")
+	manager, err := NewManager(credentials.New(client, store, "http://localhost:8080", credentials.NewCache(), "admin-secret"), "http://localhost:3900", "garage", "http://localhost:8080")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestBucketScopedSigner(t *testing.T) {
 		t.Fatalf("expected separate reusable keys per bucket: keys=%v creates=%d", keys, state.createCount)
 	}
 
-	if state.allowCount != 3 || state.denyCount != 3 || state.updates["one"] != 1 || state.updates["two"] != 1 {
+	if state.allowCount != 2 || state.denyCount != 2 || state.updates["one"] != 1 || state.updates["two"] != 1 {
 		t.Fatalf("unexpected permission/CORS operations: allow=%d deny=%d updates=%v", state.allowCount, state.denyCount, state.updates)
 	}
 

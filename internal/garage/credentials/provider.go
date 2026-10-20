@@ -13,29 +13,37 @@ import (
 
 // Provider manages Garage keys, permissions and browser CORS.
 type Provider struct {
-	admin  *admin.Client
-	store  signing.BucketLocker
+	// admin issues Garage requests on behalf of the signed-in administrator.
+	admin *admin.Client
+
+	// store coordinates managed key IDs across application instances.
+	store signing.BucketLocker
+
+	// origin is the browser origin allowed by managed bucket CORS rules.
 	origin string
-	cache  *Cache
-	token  string
+
+	// cache holds recently provisioned signing keys shared by the factory.
+	cache *Cache
+
+	// token isolates cached credentials by the administrator's Garage token.
+	token string
 }
 
-// New constructs a provider for Garage signing credentials.
-func New(client *admin.Client, store signing.BucketLocker, origin string) *Provider {
+// New constructs a provider with a required cache shared across requests.
+// The cache isolates signing credentials by admin token, bucket and purpose.
+// A nil cache is a programming error because provisioning must never silently skip caching.
+func New(client *admin.Client, store signing.BucketLocker, origin string, cache *Cache, token string) *Provider {
+	if cache == nil {
+		panic("credentials: signing cache is required")
+	}
+
 	return &Provider{
 		admin:  client,
 		store:  store,
 		origin: origin,
+		cache:  cache,
+		token:  token,
 	}
-}
-
-// NewWithCache provisions keys with a short-lived cache scoped to one admin token.
-func NewWithCache(client *admin.Client, store signing.BucketLocker, origin string, cache *Cache, token string) *Provider {
-	provider := New(client, store, origin)
-	provider.cache = cache
-	provider.token = token
-
-	return provider
 }
 
 // cached returns a verified signing key from the current token's bucket scope.

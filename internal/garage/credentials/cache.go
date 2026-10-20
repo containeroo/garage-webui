@@ -62,10 +62,6 @@ func principalKey(token, bucket, purpose string) cacheKey {
 
 // Get returns a recently provisioned credential without querying Garage again.
 func (c *Cache) Get(token, bucket, purpose string) (signing.Credential, bool) {
-	if c == nil {
-		return signing.Credential{}, false
-	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -79,7 +75,7 @@ func (c *Cache) Get(token, bucket, purpose string) (signing.Credential, bool) {
 
 // Put stores a usable signing key for a short interval.
 func (c *Cache) Put(token, bucket, purpose string, credential signing.Credential) {
-	if c == nil || !usableKey(credential) {
+	if !usableKey(credential) {
 		return
 	}
 
@@ -108,10 +104,6 @@ func (c *Cache) Put(token, bucket, purpose string, credential signing.Credential
 
 // InvalidateBucket discards keys when Garage bucket permissions or keys change.
 func (c *Cache) InvalidateBucket(bucket string) {
-	if c == nil {
-		return
-	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
