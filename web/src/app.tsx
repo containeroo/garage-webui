@@ -570,10 +570,18 @@ function Workspace({
                     details.keys.map((grant) => (
                       <div className="grant" key={grant.accessKeyId}>
                         <div className="grant-identity">
-                          <strong title={keys.find((key) => key.id === grant.accessKeyId)?.name || grant.accessKeyId}>
-                            {keys.find((key) => key.id === grant.accessKeyId)?.name || short(grant.accessKeyId)}
+                          <strong
+                            title={
+                              keys.find((key) => key.id === grant.accessKeyId)
+                                ?.name || grant.accessKeyId
+                            }
+                          >
+                            {keys.find((key) => key.id === grant.accessKeyId)
+                              ?.name || short(grant.accessKeyId)}
                           </strong>
-                          <small title={grant.accessKeyId}>{grant.accessKeyId}</small>
+                          <small title={grant.accessKeyId}>
+                            {grant.accessKeyId}
+                          </small>
                         </div>
                         <div className="grant-permissions">
                           {(["read", "write", "owner"] as const).map(

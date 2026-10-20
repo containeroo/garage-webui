@@ -55,8 +55,7 @@ export function errorMessage(error: unknown): string {
 
   return normalized.replace(
     /^(\s*)(\p{Lu})/u,
-    (_, whitespace: string, first: string) =>
-      whitespace + first.toLowerCase(),
+    (_, whitespace: string, first: string) => whitespace + first.toLowerCase(),
   );
 }
 

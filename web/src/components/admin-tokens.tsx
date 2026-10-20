@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Plus, Copy, Trash2, Pencil, Search, ShieldCheck, KeyRound } from "lucide-react";
+import {
+  Plus,
+  Copy,
+  Trash2,
+  Pencil,
+  Search,
+  ShieldCheck,
+  KeyRound,
+} from "lucide-react";
 import { allows, errorMessage, get, post, type Session } from "../api";
 import { DialogPanel } from "./ui/dialog";
 import { useQuestions } from "./ui/questions";
@@ -109,7 +117,9 @@ export function AdminTokens({ session }: { session: Session }) {
       <section className="panel settings-panel">
         <div className="panel-head">
           <div>
-            <h2>Admin tokens <span className="count">{tokens.length}</span></h2>
+            <h2>
+              Admin tokens <span className="count">{tokens.length}</span>
+            </h2>
             <p>Manage Garage Admin API access and token expiration.</p>
           </div>
           {allows(session, "CreateAdminToken") && (
@@ -119,10 +129,14 @@ export function AdminTokens({ session }: { session: Session }) {
           )}
         </div>
         {error && editing === undefined && (
-          <p role="alert" className="alert inline-alert">{error}</p>
+          <p role="alert" className="alert inline-alert">
+            {error}
+          </p>
         )}
         {loading ? (
-          <div className="empty" role="status">Loading admin tokens…</div>
+          <div className="empty" role="status">
+            Loading admin tokens…
+          </div>
         ) : error && !tokens.length ? null : tokens.length === 0 ? (
           <div className="empty">
             <ShieldCheck size={24} />
@@ -138,9 +152,14 @@ export function AdminTokens({ session }: { session: Session }) {
               <span className="actions-heading">Actions</span>
             </div>
             {tokens.map((token) => (
-              <div className="table-row token-columns" key={token.id || token.name}>
+              <div
+                className="table-row token-columns"
+                key={token.id || token.name}
+              >
                 <div className="token-identity">
-                  <span className="item-icon"><KeyRound size={16} /></span>
+                  <span className="item-icon">
+                    <KeyRound size={16} />
+                  </span>
                   <div className="token-identity-text">
                     <strong title={token.name}>{token.name}</strong>
                     <small title={token.id || undefined}>
@@ -153,7 +172,9 @@ export function AdminTokens({ session }: { session: Session }) {
                     <span className="status-pill">All operations</span>
                   ) : (
                     <>
-                      <span className="status-pill">{token.scope.length} operations</span>
+                      <span className="status-pill">
+                        {token.scope.length} operations
+                      </span>
                       <span className="token-scope-preview">
                         {token.scope.slice(0, 2).join(", ")}
                         {token.scope.length > 2 ? "…" : ""}
@@ -161,7 +182,13 @@ export function AdminTokens({ session }: { session: Session }) {
                     </>
                   )}
                 </div>
-                <span className={token.expired ? "status-pill is-expired" : "token-expiration"}>
+                <span
+                  className={
+                    token.expired
+                      ? "status-pill is-expired"
+                      : "token-expiration"
+                  }
+                >
                   {token.expired
                     ? "Expired"
                     : token.expiration
@@ -185,10 +212,19 @@ export function AdminTokens({ session }: { session: Session }) {
                       aria-label={`Revoke ${token.name}`}
                       className="icon-button danger"
                       onClick={async () => {
-                        if (!(await confirm(`Revoke token “${token.name}”? Its sessions will lose access.`))) return;
+                        if (
+                          !(await confirm(
+                            `Revoke token “${token.name}”? Its sessions will lose access.`,
+                          ))
+                        )
+                          return;
 
                         try {
-                          await post("DeleteAdminToken", {}, `?id=${encodeURIComponent(token.id!)}`);
+                          await post(
+                            "DeleteAdminToken",
+                            {},
+                            `?id=${encodeURIComponent(token.id!)}`,
+                          );
                           await load();
                         } catch (cause) {
                           setError(errorMessage(cause));
@@ -198,7 +234,14 @@ export function AdminTokens({ session }: { session: Session }) {
                       <Trash2 size={16} />
                     </button>
                   )}
-                  {!token.id && <span className="muted" title="Managed by Garage configuration">—</span>}
+                  {!token.id && (
+                    <span
+                      className="muted"
+                      title="Managed by Garage configuration"
+                    >
+                      —
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
@@ -220,7 +263,10 @@ export function AdminTokens({ session }: { session: Session }) {
               setError("");
 
               try {
-                if (scope.includes("*") || scope.some((value) => highPrivilegeScopes.includes(value))) {
+                if (
+                  scope.includes("*") ||
+                  scope.some((value) => highPrivilegeScopes.includes(value))
+                ) {
                   const accepted = await confirm(
                     "This token can grant full Garage administration permissions. Continue?",
                   );
@@ -233,7 +279,9 @@ export function AdminTokens({ session }: { session: Session }) {
                     name: name.trim(),
                     scope,
                     neverExpires: !expiration,
-                    ...(expiration ? { expiration: new Date(expiration + "Z").toISOString() } : {}),
+                    ...(expiration
+                      ? { expiration: new Date(expiration + "Z").toISOString() }
+                      : {}),
                   },
                   editing ? `?id=${encodeURIComponent(editing.id!)}` : "",
                 );
@@ -248,22 +296,39 @@ export function AdminTokens({ session }: { session: Session }) {
             }}
           >
             <div className="token-form-scroll">
-              {error && <p className="alert" role="alert">{error}</p>}
+              {error && (
+                <p className="alert" role="alert">
+                  {error}
+                </p>
+              )}
               <p className="form-intro">
-                Choose a descriptive name and grant only the operations this token needs.
+                Choose a descriptive name and grant only the operations this
+                token needs.
               </p>
 
               <div className="form-grid">
                 <label>
                   Name
-                  <input required autoFocus value={name} disabled={busy}
-                    placeholder="e.g. backup-operator" onChange={(event) => setName(event.target.value)} />
+                  <input
+                    required
+                    autoFocus
+                    value={name}
+                    disabled={busy}
+                    placeholder="e.g. backup-operator"
+                    onChange={(event) => setName(event.target.value)}
+                  />
                 </label>
                 <label>
                   Expires at (UTC)
-                  <input type="datetime-local" value={expiration} disabled={busy}
-                    onChange={(event) => setExpiration(event.target.value)} />
-                  <small className="field-hint">Leave blank to never expire.</small>
+                  <input
+                    type="datetime-local"
+                    value={expiration}
+                    disabled={busy}
+                    onChange={(event) => setExpiration(event.target.value)}
+                  />
+                  <small className="field-hint">
+                    Leave blank to never expire.
+                  </small>
                 </label>
               </div>
 
@@ -279,8 +344,14 @@ export function AdminTokens({ session }: { session: Session }) {
                   </span>
                 </div>
                 <label className="scope-all">
-                  <input type="checkbox" checked={scope.includes("*")} disabled={busy}
-                    onChange={(event) => setScope(event.target.checked ? ["*"] : [])} />
+                  <input
+                    type="checkbox"
+                    checked={scope.includes("*")}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setScope(event.target.checked ? ["*"] : [])
+                    }
+                  />
                   <span>
                     <strong>All operations</strong>
                     <small>Unrestricted Garage administration access</small>
@@ -290,18 +361,34 @@ export function AdminTokens({ session }: { session: Session }) {
                   <>
                     <div className="scope-search">
                       <Search size={17} aria-hidden="true" />
-                      <input aria-label="Filter operations" placeholder="Filter operations…"
-                        value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)} />
+                      <input
+                        aria-label="Filter operations"
+                        placeholder="Filter operations…"
+                        value={scopeFilter}
+                        onChange={(event) => setScopeFilter(event.target.value)}
+                      />
                     </div>
-                    <div className="token-scopes" role="group" aria-label="Individual operations">
+                    <div
+                      className="token-scopes"
+                      role="group"
+                      aria-label="Individual operations"
+                    >
                       {visibleOperations.map((operation) => (
                         <label className="scope-option" key={operation}>
-                          <input type="checkbox" checked={scope.includes(operation)} disabled={busy}
+                          <input
+                            type="checkbox"
+                            checked={scope.includes(operation)}
+                            disabled={busy}
                             onChange={(event) =>
-                              setScope((current) => event.target.checked
-                                ? [...current, operation]
-                                : current.filter((value) => value !== operation))
-                            } />
+                              setScope((current) =>
+                                event.target.checked
+                                  ? [...current, operation]
+                                  : current.filter(
+                                      (value) => value !== operation,
+                                    ),
+                              )
+                            }
+                          />
                           <span title={operation}>{operation}</span>
                         </label>
                       ))}
@@ -312,15 +399,25 @@ export function AdminTokens({ session }: { session: Session }) {
                   </>
                 )}
                 <p className="scope-warning">
-                  CreateAdminToken and UpdateAdminToken can grant full administration access,
-                  even when other operations are restricted.
+                  CreateAdminToken and UpdateAdminToken can grant full
+                  administration access, even when other operations are
+                  restricted.
                 </p>
               </fieldset>
             </div>
             <div className="modal-actions token-form-actions">
-              <button type="button" className="secondary" disabled={busy}
-                onClick={() => setEditing(undefined)}>Cancel</button>
-              <button className="primary" disabled={busy || !name.trim() || !scope.length}>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setEditing(undefined)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                disabled={busy || !name.trim() || !scope.length}
+              >
                 {busy ? "Saving…" : editing ? "Save token" : "Create token"}
               </button>
             </div>
@@ -329,24 +426,39 @@ export function AdminTokens({ session }: { session: Session }) {
       )}
 
       {secret && (
-        <DialogPanel title="Save your admin token" onClose={() => setSecret("")}>
+        <DialogPanel
+          title="Save your admin token"
+          onClose={() => setSecret("")}
+        >
           <div className="secret-panel">
-            <p className="form-intro">This token is shown only once. Copy it and store it securely before closing.</p>
+            <p className="form-intro">
+              This token is shown only once. Copy it and store it securely
+              before closing.
+            </p>
             <label>
               Secret token
-              <textarea readOnly value={secret} onFocus={(event) => event.target.select()} />
+              <textarea
+                readOnly
+                value={secret}
+                onFocus={(event) => event.target.select()}
+              />
             </label>
-            <button className="secondary" onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(secret);
-              } catch {
-                setError("copy failed. Select and copy the token manually.");
-              }
-            }}>
+            <button
+              className="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(secret);
+                } catch {
+                  setError("copy failed. Select and copy the token manually.");
+                }
+              }}
+            >
               <Copy size={16} /> Copy token
             </button>
             <div className="modal-actions">
-              <button className="primary" onClick={() => setSecret("")}>Done</button>
+              <button className="primary" onClick={() => setSecret("")}>
+                Done
+              </button>
             </div>
           </div>
         </DialogPanel>

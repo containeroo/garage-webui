@@ -113,11 +113,19 @@ export function KeySettings({
           <h3>Edit access key</h3>
           <p>Update key details and bucket-specific permissions.</p>
         </div>
-        <button type="button" className="secondary" onClick={onClose}>Close</button>
+        <button type="button" className="secondary" onClick={onClose}>
+          Close
+        </button>
       </div>
-      {error && <p className="alert" role="alert">{error}</p>}
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
       {!details ? (
-        <p className="editor-loading" role="status">Loading key details…</p>
+        <p className="editor-loading" role="status">
+          Loading key details…
+        </p>
       ) : (
         <>
           <div className="editor-section">
@@ -128,33 +136,56 @@ export function KeySettings({
             <div className="form-grid">
               <label>
                 Name
-                <input value={name} disabled={busy} onChange={(event) => setName(event.target.value)} />
+                <input
+                  value={name}
+                  disabled={busy}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </label>
               <div className="field-stack">
                 <span className="field-label">Expiration</span>
-                <span className="field-hint">Set a date or allow the key to remain active.</span>
+                <span className="field-hint">
+                  Set a date or allow the key to remain active.
+                </span>
                 <label className="inline-check">
-                  <input type="checkbox" checked={never} disabled={busy}
-                    onChange={(event) => setNever(event.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={never}
+                    disabled={busy}
+                    onChange={(event) => setNever(event.target.checked)}
+                  />
                   Never expires
                 </label>
                 {!never && (
-                  <input aria-label="Expiration (local time)" type="datetime-local" value={expiration}
-                    disabled={busy} onChange={(event) => setExpiration(event.target.value)} />
+                  <input
+                    aria-label="Expiration (local time)"
+                    type="datetime-local"
+                    value={expiration}
+                    disabled={busy}
+                    onChange={(event) => setExpiration(event.target.value)}
+                  />
                 )}
               </div>
             </div>
             <label className="permission-toggle">
-              <input type="checkbox" checked={createBucket} disabled={busy}
-                onChange={(event) => setCreateBucket(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={createBucket}
+                disabled={busy}
+                onChange={(event) => setCreateBucket(event.target.checked)}
+              />
               <span>
                 <strong>Allow creating buckets</strong>
                 <small>Permit this access key to create new buckets.</small>
               </span>
             </label>
             <div className="editor-actions">
-              <button type="button" className="primary" disabled={busy || !name.trim()}
-                onClick={() => void save()}>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !name.trim()}
+                onClick={() => void save()}
+              >
                 <Save size={15} /> {busy ? "Saving…" : "Save key"}
               </button>
             </div>
@@ -170,27 +201,47 @@ export function KeySettings({
             {details.buckets?.length ? (
               <div className="permission-table">
                 <div className="permission-header" aria-hidden="true">
-                  <span>Bucket</span><span>Read</span><span>Write</span><span>Owner</span>
+                  <span>Bucket</span>
+                  <span>Read</span>
+                  <span>Write</span>
+                  <span>Owner</span>
                 </div>
                 {details.buckets.map((bucket) => (
                   <div className="permission-row" key={bucket.id}>
-                    <div className="permission-bucket" title={bucket.globalAliases?.[0] || bucket.id}>
+                    <div
+                      className="permission-bucket"
+                      title={bucket.globalAliases?.[0] || bucket.id}
+                    >
                       <strong>{bucket.globalAliases?.[0] || bucket.id}</strong>
                       <small>{bucket.id}</small>
                     </div>
                     {(["read", "write", "owner"] as const).map((permission) => (
                       <label className="permission-cell" key={permission}>
-                        <input type="checkbox" checked={bucket.permissions[permission]} disabled={busy}
+                        <input
+                          type="checkbox"
+                          checked={bucket.permissions[permission]}
+                          disabled={busy}
                           aria-label={`${permission} ${bucket.globalAliases?.[0] || bucket.id}`}
-                          onChange={(event) => void updatePermissions(bucket, permission, event.target.checked)} />
-                        <span className="mobile-permission-label">{permission}</span>
+                          onChange={(event) =>
+                            void updatePermissions(
+                              bucket,
+                              permission,
+                              event.target.checked,
+                            )
+                          }
+                        />
+                        <span className="mobile-permission-label">
+                          {permission}
+                        </span>
                       </label>
                     ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="editor-empty">No bucket permissions yet. Grant access from a bucket's details.</p>
+              <p className="editor-empty">
+                No bucket permissions yet. Grant access from a bucket's details.
+              </p>
             )}
           </div>
         </>
