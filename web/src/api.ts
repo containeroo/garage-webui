@@ -123,7 +123,7 @@ export type BucketDetails = {
 };
 /** A supported top-level console destination. */
 export type WorkspacePage =
-  "overview" | "cluster" | "buckets" | "keys" | "tokens" | "profile";
+  "overview" | "cluster" | "buckets" | "jobs" | "keys" | "tokens" | "profile";
 
 // isRecord narrows untrusted JSON to an object with inspectable fields.
 function isRecord(value: unknown): value is Record<string, unknown> {

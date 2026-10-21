@@ -8,6 +8,7 @@ export function pageTitle(page: WorkspacePage): string {
     overview: "Overview",
     cluster: "Cluster",
     buckets: "Buckets",
+    jobs: "Background operations",
     keys: "Access keys",
     tokens: "Admin tokens",
     profile: "My profile",

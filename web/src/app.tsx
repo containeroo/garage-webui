@@ -285,7 +285,6 @@ function Workspace({
           </button>
         </header>
         <div className="content">
-          <BackgroundJobs />
           {!details && (
             <div className="page-heading">
               <div>
@@ -424,6 +423,7 @@ function Workspace({
                   />
                 </section>
               )}
+              {page === "jobs" && <BackgroundJobs />}
               {page === "keys" && (
                 <section className="panel">
                   <div className="panel-head">

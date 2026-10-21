@@ -5,6 +5,7 @@ import {
   Database,
   KeyRound,
   LayoutDashboard,
+  ListTodo,
   LogOut,
   Server,
   ShieldCheck,
@@ -42,6 +43,7 @@ export function Sidebar({
             ["overview", LayoutDashboard, "Overview"],
             ["cluster", Server, "Cluster"],
             ["buckets", Database, "Buckets"],
+            ["jobs", ListTodo, "Background operations"],
             ["keys", KeyRound, "Access keys"],
           ] as const
         )

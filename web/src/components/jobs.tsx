@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { cancelDeletion, listDeletions, type DeletionJob } from "../jobs";
 import { errorMessage } from "../api";
+import { Empty } from "./storage";
 
 /** BackgroundJobs shows persisted job state when the user asks to refresh it. */
 export function BackgroundJobs() {
@@ -34,18 +35,26 @@ export function BackgroundJobs() {
       className="panel background-jobs"
       aria-label="Background operations"
     >
-      <h2>
-        Background operations{" "}
+      <div className="panel-head">
+        <div>
+          <h2>Recent deletion jobs</h2>
+          <p>Refresh to check the latest status of queued deletions.</p>
+        </div>
         <button
-          className="text-button"
+          className="secondary"
           onClick={() => void refresh()}
           disabled={refreshing}
         >
           {refreshing ? "Refreshing…" : "Refresh status"}
         </button>
-      </h2>
+      </div>
       {error && <p role="alert">{error}</p>}
-      {!recent.length && !error && <p>No recent background operations.</p>}
+      {!recent.length && !error && (
+        <Empty
+          text="No recent deletion jobs"
+          detail="Completed and cancelled jobs remain available here for seven days."
+        />
+      )}
       {recent.map((job) => (
         <div
           key={job.id}
