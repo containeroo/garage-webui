@@ -96,9 +96,9 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 		w.Write([]byte(`<ListAllMyBucketsResult><Buckets><Bucket><Name>allowed</Name></Bucket></Buckets></ListAllMyBucketsResult>`)) // nolint:errcheck
 	}))
 	defer s3server.Close()
-	authentication, err := auth.New(store, auth.Config{PublicURL: "http://console.example", GarageURL: upstream.URL, S3URL: s3server.URL, Region: "garage", SessionSecret: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))})
+	authentication, err := auth.New(store, auth.Config{PublicURL: "http://console.example", GarageURL: upstream.URL, S3URL: s3server.URL, S3PublicURL: "https://browser-s3.example", Region: "garage", SessionSecret: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))})
 	require.NoError(t, err)
-	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, s3server.URL, "http://console.example", "", slog.Default(), false, web.Assets, nil).Handler()
+	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil).Handler()
 	call := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:9000"
@@ -166,6 +166,8 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	signed := call("POST", "/api/objects/presign", `{"bucketId":"allowed","action":"list"}`, cookie)
 	assert.Equal(t, 200, signed.Code)
 	assert.Contains(t, signed.Body.String(), "GKbucket")
+	assert.Contains(t, signed.Body.String(), "https://browser-s3.example/")
+	assert.NotContains(t, signed.Body.String(), s3server.URL)
 	assert.NotContains(t, signed.Body.String(), "s3-secret")
 	t.Run("/api/users", func(t *testing.T) {
 		path := "/api/users"

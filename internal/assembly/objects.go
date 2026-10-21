@@ -74,7 +74,7 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 		return nil, objects.ErrForbidden
 	}
 
-	manager, err := s3.NewManager(provider, f.auth.S3URL, f.auth.Region, f.publicURL)
+	manager, err := s3.NewManager(provider, f.auth.S3PublicURL, f.auth.Region, f.publicURL)
 	if err != nil {
 		return nil, err
 	}

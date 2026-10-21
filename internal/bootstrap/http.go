@@ -27,12 +27,19 @@ func newServer(
 		PublicURL:     cfg.Server.PublicURL,
 		RoutePrefix:   cfg.Server.RoutePrefix,
 		GarageURL:     cfg.GarageURL,
-		S3URL:         cfg.S3PublicURL,
+		S3URL:         cfg.S3URL,
+		S3PublicURL:   cfg.S3PublicURL,
 		Region:        cfg.S3Region,
 		SessionSecret: cfg.SessionSecret,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if authentication.S3URL != "" {
+		if _, err := s3.NewClient(authentication.S3URL, cfg.S3Region, "validation", "validation"); err != nil {
+			return nil, err
+		}
 	}
 
 	if cfg.S3PublicURL != "" {

@@ -23,7 +23,7 @@ func TestListBucketsClient(t *testing.T) {
 			_, _ = w.Write([]byte(`<ListAllMyBucketsResult><Buckets><Bucket><Name>first</Name></Bucket><Bucket><Name>second</Name></Bucket></Buckets></ListAllMyBucketsResult>`))
 		}))
 		defer api.Close()
-		client, err := NewClient(api.URL, "garage", "GKtest", "secret", "http://localhost:8080")
+		client, err := NewClient(api.URL, "garage", "GKtest", "secret")
 		require.NoError(t, err)
 		result, err := client.ListBuckets(context.Background())
 
@@ -40,7 +40,7 @@ func TestListBucketsClient(t *testing.T) {
 			_, _ = w.Write([]byte(`<Error/>`))
 		}))
 		defer api.Close()
-		client, err := NewClient(api.URL, "garage", "GKtest", "secret", "http://localhost:8080")
+		client, err := NewClient(api.URL, "garage", "GKtest", "secret")
 		require.NoError(t, err)
 		_, err = client.ListBuckets(context.Background())
 
@@ -57,7 +57,7 @@ func TestListBucketsClient(t *testing.T) {
 			_, _ = w.Write([]byte(`<Error/>`))
 		}))
 		defer api.Close()
-		client, err := NewClient(api.URL, "garage", "GKtest", "secret", "http://localhost:8080")
+		client, err := NewClient(api.URL, "garage", "GKtest", "secret")
 		require.NoError(t, err)
 		_, err = client.ListBuckets(context.Background())
 
@@ -74,7 +74,7 @@ func TestListBucketsClient(t *testing.T) {
 			_, _ = w.Write([]byte(`<ListAllMyBucketsResult`))
 		}))
 		defer api.Close()
-		client, err := NewClient(api.URL, "garage", "GKtest", "secret", "http://localhost:8080")
+		client, err := NewClient(api.URL, "garage", "GKtest", "secret")
 		require.NoError(t, err)
 		_, err = client.ListBuckets(context.Background())
 

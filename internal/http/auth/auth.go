@@ -61,8 +61,10 @@ type Service struct {
 	encryption cipher.AEAD
 	// GarageURL specifies the Garage Admin API endpoint.
 	GarageURL string
-	// S3URL specifies the browser-accessible S3 endpoint.
+	// S3URL specifies the server-side S3 endpoint.
 	S3URL string
+	// S3PublicURL specifies the browser-accessible S3 endpoint.
+	S3PublicURL string
 	// Region specifies the S3 signing region.
 	Region string
 	// publicURL specifies the browser-facing application URL.
@@ -81,8 +83,10 @@ type Config struct {
 	RoutePrefix string
 	// GarageURL specifies the Garage Admin API endpoint.
 	GarageURL string
-	// S3URL specifies the browser-accessible S3 endpoint.
+	// S3URL specifies the server-side S3 endpoint.
 	S3URL string
+	// S3PublicURL specifies the browser-accessible S3 endpoint.
+	S3PublicURL string
 	// Region specifies the S3 signing region.
 	Region string
 	// SessionSecret provides the secret used to derive session encryption keys.
@@ -120,14 +124,15 @@ func New(store storage.Sessions, cfg Config) (*Service, error) {
 	}
 
 	return &Service{
-		store:      store,
-		encryption: aead,
-		GarageURL:  cfg.GarageURL,
-		S3URL:      cfg.S3URL,
-		Region:     cfg.Region,
-		publicURL:  cfg.PublicURL,
-		prefix:     cfg.RoutePrefix,
-		secure:     origin.Scheme == "https",
+		store:       store,
+		encryption:  aead,
+		GarageURL:   cfg.GarageURL,
+		S3URL:       cfg.S3URL,
+		S3PublicURL: cfg.S3PublicURL,
+		Region:      cfg.Region,
+		publicURL:   cfg.PublicURL,
+		prefix:      cfg.RoutePrefix,
+		secure:      origin.Scheme == "https",
 	}, nil
 }
 

@@ -11,6 +11,7 @@ Flags are also available as environment variables prefixed with `GARAGE_WEBUI__`
 | `--management-listen-address` | Health endpoint listen address (default `127.0.0.1:8081`) |
 | `--public-url` | Public origin (default `http://localhost:8080`) |
 | `--route-prefix` | Optional URL path prefix |
+| `--s3-url` | Server-side Garage S3 endpoint (defaults to `--s3-public-url`) |
 | `--s3-public-url` | Browser-accessible Garage S3 endpoint for objects |
 | `--s3-region` | S3 region (default `garage`) |
 | `--log-format` | `json` or `text` |
@@ -34,3 +35,9 @@ SQLite supports one Web UI process per database on a local filesystem. The appli
 PostgreSQL is the option for multiple replicas. Connection-pool settings apply only to PostgreSQL and are rejected with SQLite. Switching database URLs does not transfer sessions or signing-key references between backends.
 
 SQLite uses WAL mode. Stop the application before copying its database for backup, or use a SQLite-aware online backup tool; copying only the main file while running can omit pending writes. Persist the entire directory, including WAL files. Do not share the SQLite directory between pods or place it on a network filesystem.
+
+### Separate server and browser S3 endpoints
+
+Set `GARAGE_WEBUI__S3_URL=http://garage-backup:3900` for server-side S3 credential validation and bucket discovery. Keep `GARAGE_WEBUI__S3_PUBLIC_URL=https://garage-s3.example.com` for browser-signed object operations. The internal endpoint may use HTTP even when the Web UI uses HTTPS. Both settings must be origins without paths, credentials, queries, or fragments.
+
+When `--s3-url` is unset, server-side requests use `--s3-public-url`. It does not fall back to the Web UI's `--public-url`. The browser endpoint must remain reachable from the browser and must use HTTPS for an HTTPS Web UI. With a separate internal S3 endpoint, the Web UI pod can contact Garage directly on port 3900 instead of going through the public gateway.

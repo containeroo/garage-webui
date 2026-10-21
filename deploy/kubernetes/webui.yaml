@@ -52,6 +52,8 @@ spec:
                   key: session-secret
             - name: GARAGE_WEBUI__PUBLIC_URL
               value: http://localhost:8080
+            - name: GARAGE_WEBUI__S3_URL
+              value: http://garage:3900
             - name: GARAGE_WEBUI__S3_PUBLIC_URL
               value: http://localhost:3900
             - name: GARAGE_WEBUI__S3_REGION

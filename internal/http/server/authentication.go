@@ -37,7 +37,7 @@ func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc
 			Mode:           id.Credential.Kind,
 			User:           id.User,
 			Scope:          id.Scope,
-			UploadsEnabled: authentication.S3URL != "",
+			UploadsEnabled: authentication.S3PublicURL != "",
 		})
 	}
 }

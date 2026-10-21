@@ -2,6 +2,8 @@
 package flags
 
 import (
+	"cmp"
+
 	appkitconfig "github.com/containeroo/appkit/config"
 	"github.com/containeroo/garage-webui/internal/database"
 	"github.com/containeroo/tinyflags"
@@ -19,6 +21,8 @@ type Config struct {
 	GarageURL string
 	// SessionSecret encrypts stored Garage credentials.
 	SessionSecret string
+	// S3URL is the server-side S3 endpoint; empty uses S3PublicURL.
+	S3URL string
 	// S3PublicURL is the browser-accessible S3 API endpoint used for direct uploads.
 	S3PublicURL string
 	// S3Region is the Garage S3 region used for SigV4 signing.
@@ -38,7 +42,7 @@ func Parse(args []string, version string) (Config, error) {
 	finalizeLogging := appkitconfig.RegisterLogging(tf, &cfg.Logging)
 
 	registerGarage(tf, &cfg)
-	registerS3(tf, &cfg)
+	finalizeS3 := registerS3(tf, &cfg)
 
 	if err := tf.Parse(args); err != nil {
 		return Config{}, err
@@ -46,6 +50,8 @@ func Parse(args []string, version string) (Config, error) {
 
 	finalizeServer()
 	finalizeLogging()
+	finalizeS3()
+
 	cfg.Overrides = tf.Overrides()
 
 	return cfg, nil
@@ -63,13 +69,19 @@ func registerGarage(tf *tinyflags.FlagSet, cfg *Config) {
 		Value()
 }
 
-// registerS3 registers S3 upload flags.
-func registerS3(tf *tinyflags.FlagSet, cfg *Config) {
+// registerS3 registers S3 flags and returns the endpoint-default finalizer.
+func registerS3(tf *tinyflags.FlagSet, cfg *Config) func() {
+	tf.StringVar(&cfg.S3URL, "s3-url", "", "Server-side Garage S3 API origin (defaults to s3-public-url).").
+		Value()
 	tf.StringVar(&cfg.S3PublicURL, "s3-public-url", "", "Browser-accessible Garage S3 API origin for direct uploads (optional).").
 		Value()
 
 	tf.StringVar(&cfg.S3Region, "s3-region", "garage", "Garage S3 region for signed upload URLs.").
 		Value()
+
+	return func() {
+		cfg.S3URL = cmp.Or(cfg.S3URL, cfg.S3PublicURL)
+	}
 }
 
 // registerDatabase exposes the database URL and PostgreSQL-only pool options.

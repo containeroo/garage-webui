@@ -21,9 +21,9 @@ type Client struct {
 	http *http.Client
 }
 
-// NewClient constructs an S3 client using the supplied, unmodified key credentials.
-func NewClient(endpoint, region, accessKeyID, secret, publicURL string) (*Client, error) {
-	signer, err := New(endpoint, region, accessKeyID, secret, publicURL)
+// NewClient constructs a server-side S3 client; HTTP is allowed independently of the browser origin.
+func NewClient(endpoint, region, accessKeyID, secret string) (*Client, error) {
+	signer, err := New(endpoint, region, accessKeyID, secret, "")
 	if err != nil {
 		return nil, err
 	}

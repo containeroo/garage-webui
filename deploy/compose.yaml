@@ -49,6 +49,7 @@ services:
       GARAGE_WEBUI__GARAGE_URL: http://garage:3903
       GARAGE_WEBUI__SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in deploy/.env}
       GARAGE_WEBUI__PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      GARAGE_WEBUI__S3_URL: http://garage:3900
       GARAGE_WEBUI__S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:3900}
       GARAGE_WEBUI__S3_REGION: garage
     ports:

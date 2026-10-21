@@ -55,3 +55,36 @@ func TestSQLiteConfiguration(t *testing.T) {
 	assert.Zero(t, cfg.Database.MaxConns)
 	assert.Zero(t, cfg.Database.MinIdleConns)
 }
+
+func TestS3ServerEndpointConfiguration(t *testing.T) {
+	t.Setenv("GARAGE_WEBUI__DATABASE_URL", "sqlite:///data/console.db")
+	t.Setenv("GARAGE_WEBUI__GARAGE_URL", "http://garage:3903")
+	t.Setenv("GARAGE_WEBUI__SESSION_SECRET", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("GARAGE_WEBUI__S3_URL", "http://garage:3900")
+	t.Setenv("GARAGE_WEBUI__S3_PUBLIC_URL", "https://s3.example.com")
+	cfg, err := Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Equal(t, "http://garage:3900", cfg.S3URL)
+	assert.Equal(t, "https://s3.example.com", cfg.S3PublicURL)
+	cfg, err = Parse([]string{"--s3-url=http://other:3900"}, "test")
+	require.NoError(t, err)
+	assert.Equal(t, "http://other:3900", cfg.S3URL)
+}
+
+func TestS3EndpointFallback(t *testing.T) {
+	t.Setenv("GARAGE_WEBUI__DATABASE_URL", "sqlite:///data/console.db")
+	t.Setenv("GARAGE_WEBUI__GARAGE_URL", "http://garage:3903")
+	t.Setenv("GARAGE_WEBUI__SESSION_SECRET", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("GARAGE_WEBUI__S3_URL", "")
+	t.Setenv("GARAGE_WEBUI__S3_PUBLIC_URL", "https://s3.example.com")
+	cfg, err := Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Equal(t, cfg.S3PublicURL, cfg.S3URL)
+	cfg, err = Parse([]string{"--s3-public-url=https://other.example.com"}, "test")
+	require.NoError(t, err)
+	assert.Equal(t, "https://other.example.com", cfg.S3URL)
+	t.Setenv("GARAGE_WEBUI__S3_PUBLIC_URL", "")
+	cfg, err = Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.S3URL)
+}
