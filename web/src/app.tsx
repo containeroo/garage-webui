@@ -176,10 +176,7 @@ function Workspace({
     }
   }
   /** showBucket loads the latest selected bucket and ignores cancelled detail requests. */
-  async function showBucket(
-    bucket: Bucket,
-    tab: BucketTab = BucketTab.Overview,
-  ) {
+  async function showBucket(bucket: Bucket, tab: BucketTab = BucketTab.Browse) {
     bucketRequest.current?.abort();
     const controller = new AbortController();
     bucketRequest.current = controller;

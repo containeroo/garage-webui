@@ -84,12 +84,7 @@ export function BucketRows({
         <div className="table-row bucket-columns" key={bucket.id}>
           <button
             className="item-name bucket-name-button"
-            onClick={() =>
-              onSelect(
-                bucket,
-                browseOnly ? BucketTab.Browse : BucketTab.Overview,
-              )
-            }
+            onClick={() => onSelect(bucket, BucketTab.Browse)}
           >
             <div className="item-icon">
               <Database size={16} />
