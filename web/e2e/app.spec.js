@@ -301,7 +301,11 @@ test.describe.serial("Garage credentials and storage", () => {
         .getByRole("dialog")
         .getByRole("button", { name: "Confirm" })
         .click();
-      await expect(item).toHaveCount(0);
+      await expect(page.getByRole("status")).toContainText("Deletion queued");
+      await expect(async () => {
+        await page.getByRole("button", { name: "Refresh objects" }).click();
+        await expect(item).toHaveCount(0, { timeout: 1_000 });
+      }).toPass({ timeout: 10_000 });
     }
   });
 

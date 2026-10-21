@@ -18,7 +18,7 @@ func TestPersistentDeletionJobClaims(t *testing.T) {
 	owner := []byte("owner-one")
 	job := storage.DeletionJob{ID: "first", Owner: owner, EncryptedCredential: []byte("encrypted"), Bucket: "bucket", Targets: `{"folders":["folder/"]}`}
 	require.NoError(t, store.CreateDeletionJob(ctx, job))
-	claimed, ok, err := store.ClaimDeletionJob(ctx, "worker-1", 30*time.Millisecond)
+	claimed, ok, err := store.ClaimDeletionJob(ctx, "worker-1", time.Minute)
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, job.ID, claimed.ID)
@@ -27,7 +27,12 @@ func TestPersistentDeletionJobClaims(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	require.NoError(t, store.RecordDeletionProgress(ctx, job.ID, "worker-1", 3))
-	time.Sleep(40 * time.Millisecond)
+	_, err = store.db.ExecContext(ctx, `
+		UPDATE webui_deletion_jobs
+		SET lease_until = ?
+		WHERE id = ?
+	`, time.Now().Add(-time.Second).UnixMilli(), job.ID)
+	require.NoError(t, err)
 	claimed, ok, err = store.ClaimDeletionJob(ctx, "worker-2", time.Minute)
 	require.NoError(t, err)
 	require.True(t, ok)
