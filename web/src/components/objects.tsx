@@ -25,6 +25,7 @@ import { Empty } from "./storage";
 import {
   copyObject,
   deleteObject,
+  deleteFolder,
   listObjects,
   prepareOperation,
   signDirectOperation,
@@ -135,6 +136,9 @@ export function BucketObjects({
   const [history, setHistory] = useState<string[]>([]);
   const [token, setToken] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const [deletionProgress, setDeletionProgress] = useState("");
+  const [deletionError, setDeletionError] = useState("");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -187,6 +191,8 @@ export function BucketObjects({
 
   /** navigate changes folders and clears the previous page's selection and preview. */
   function navigate(folder: string) {
+    if (busy) return;
+    setDeletionError("");
     setActiveItem(undefined);
     clearPreview();
     setPrefix(folder);
@@ -201,6 +207,7 @@ export function BucketObjects({
     setToken("");
     setHistory([]);
     setSelected([]);
+    setSelectedFolders([]);
     setPage(emptyPage);
   }
   /** refresh retrieves the current view's authoritative data before updating its state. */
@@ -271,37 +278,53 @@ export function BucketObjects({
     }
   }
 
-  /** remove confirms deletion and reports failures before refreshing the affected view. */
-  async function remove(keys: string[]) {
-    if (
-      !keys.length ||
-      !(await confirm(
-        `Delete ${keys.length} selected object(s)? This cannot be undone.`,
-      ))
-    )
-      return;
+  /** remove deletes selected objects and recursively empties selected virtual folders. */
+  async function remove(keys: string[], folders: string[] = []) {
+    if (!keys.length && !folders.length) return;
+
+    const message = folders.length
+      ? `Delete ${folders.length} folder(s) and ${keys.length} file(s)? Every object inside the selected folders and their subfolders will be deleted recursively. This cannot be undone.`
+      : `Delete ${keys.length} selected object(s)? This cannot be undone.`;
+    if (!(await confirm(message))) return;
+
     setBusy(true);
     setError("");
+    setDeletionError("");
+    setDeletionProgress("Deleting objects…");
     const failures: string[] = [];
+    let deleted = 0;
+    /** updateProgress shows progress for every successfully removed object. */
+    function updateProgress() {
+      deleted++;
+      setDeletionProgress(`Deleted ${deleted} object(s)…`);
+    }
     try {
-      // Sequential deletes avoid issuing a burst of privileged presigned URLs.
+      // Reuse the current Garage-scoped S3 operations for every deletion.
+      for (const folder of folders) {
+        try {
+          await deleteFolder(bucketId, folder, updateProgress);
+        } catch (cause) {
+          failures.push(`${folder}: ${errorMessage(cause)}`);
+        }
+      }
       for (const key of keys) {
         try {
           await deleteObject(bucketId, key);
+          updateProgress();
         } catch (cause) {
           failures.push(`${key}: ${errorMessage(cause)}`);
         }
       }
-      setSelected([]);
       setActiveItem(undefined);
       clearPreview();
       resetPage();
       refresh();
       if (failures.length)
-        setError(
-          `${failures.length} deletions failed: ${failures.slice(0, 3).join("; ")}`,
+        setDeletionError(
+          `${failures.length} deletion(s) failed after ${deleted} object(s) deleted: ${failures.slice(0, 3).join("; ")}`,
         );
     } finally {
+      setDeletionProgress("");
       setBusy(false);
     }
   }
@@ -344,6 +367,20 @@ export function BucketObjects({
         : [...current, key],
     );
   }
+
+  /** toggleFolder selects a visible folder without navigating into it. */
+  function toggleFolder(folder: string) {
+    setSelectedFolders((current) =>
+      current.includes(folder)
+        ? current.filter((candidate) => candidate !== folder)
+        : [...current, folder],
+    );
+  }
+
+  const selectionCount = selected.length + selectedFolders.length;
+  const allPageSelected =
+    selected.length === page.items.length &&
+    selectedFolders.length === page.folders.length;
 
   const segments = prefix.split("/").filter(Boolean);
   return (
@@ -447,39 +484,47 @@ export function BucketObjects({
               >
                 {descending ? "Descending" : "Ascending"}
               </button>
-              {canDelete && page.items.length > 0 && (
-                <>
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      setSelected(
-                        selected.length === page.items.length
-                          ? []
-                          : page.items.map((item) => item.key),
-                      )
-                    }
-                  >
-                    <CheckSquare size={14} />
-                    {selected.length === page.items.length
-                      ? "Deselect all"
-                      : "Select page"}
-                  </button>
-                  {selected.length > 0 && (
+              {canDelete &&
+                (page.items.length > 0 || page.folders.length > 0) && (
+                  <>
                     <button
-                      className="text-button danger"
+                      className="text-button"
                       disabled={busy}
-                      onClick={() => void remove(selected)}
+                      onClick={() => {
+                        setSelected(
+                          allPageSelected
+                            ? []
+                            : page.items.map((item) => item.key),
+                        );
+                        setSelectedFolders(
+                          allPageSelected ? [] : [...page.folders],
+                        );
+                      }}
                     >
-                      <Trash2 size={14} />
-                      Delete {selected.length}
+                      <CheckSquare size={14} />
+                      {allPageSelected ? "Deselect all" : "Select page"}
                     </button>
-                  )}
-                </>
-              )}
+                    {selectionCount > 0 && (
+                      <button
+                        className="text-button danger"
+                        disabled={busy}
+                        onClick={() => void remove(selected, selectedFolders)}
+                      >
+                        <Trash2 size={14} />
+                        Delete {selectionCount}
+                      </button>
+                    )}
+                  </>
+                )}
             </div>
-            {error && (
+            {deletionProgress && (
+              <p className="explorer-message" role="status">
+                {deletionProgress}
+              </p>
+            )}
+            {(error || deletionError) && (
               <p className="object-error explorer-message" role="alert">
-                {error}
+                {error || deletionError}
               </p>
             )}
             <div className="explorer-table" aria-label="Objects">
@@ -505,20 +550,32 @@ export function BucketObjects({
                   />
                 )}
               {page.folders.map((folder) => (
-                <button
-                  key={folder}
-                  className="explorer-row explorer-folder"
-                  onClick={() => navigate(folder)}
-                >
-                  <span />
-                  <span className="explorer-name">
+                <div key={folder} className="explorer-row explorer-folder">
+                  <span>
+                    {canDelete && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select folder ${folder}`}
+                        checked={selectedFolders.includes(folder)}
+                        disabled={busy}
+                        onChange={() => toggleFolder(folder)}
+                      />
+                    )}
+                  </span>
+                  <button
+                    className="explorer-name"
+                    disabled={busy}
+                    onClick={() => navigate(folder)}
+                  >
                     <Folder size={17} />
                     <strong>{folder.slice(prefix.length)}</strong>
+                  </button>
+                  <span>—</span>
+                  <span>—</span>
+                  <span className="explorer-row-actions">
+                    <ChevronRight size={16} />
                   </span>
-                  <span>—</span>
-                  <span>—</span>
-                  <ChevronRight size={16} />
-                </button>
+                </div>
               ))}
               {ordered.map((item) => (
                 <div
@@ -585,6 +642,7 @@ export function BucketObjects({
                     setToken(history.at(-1) || "");
                     setHistory((tokens) => tokens.slice(0, -1));
                     setSelected([]);
+                    setSelectedFolders([]);
                     setActiveItem(undefined);
                     clearPreview();
                   }}
@@ -599,6 +657,7 @@ export function BucketObjects({
                     setHistory((tokens) => [...tokens, token]);
                     setToken(page.nextToken);
                     setSelected([]);
+                    setSelectedFolders([]);
                     setActiveItem(undefined);
                     clearPreview();
                   }}

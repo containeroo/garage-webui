@@ -83,7 +83,11 @@ func (s *Presigner) UploadURL(bucket, key string, now time.Time) (string, error)
 
 // DeleteURL signs a DELETE for one object; the caller must authorize mutations.
 func (s *Presigner) DeleteURL(bucket, key string, now time.Time) (string, error) {
-	return s.objectURL(http.MethodDelete, bucket, key, nil, now)
+	if !validBucket(bucket) || !objectpath.ValidDeleteObjectKey(key) {
+		return "", errors.New("invalid bucket alias or object key")
+	}
+
+	return s.signedURL(http.MethodDelete, "/"+bucket+"/"+key, nil, now)
 }
 
 // DownloadURL signs a GET that returns the selected object as an attachment.

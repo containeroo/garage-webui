@@ -9,6 +9,29 @@ import (
 )
 
 // TestValidObjectRequest rejects bad scopes, unsupported actions and pagination abuse.
+// TestFolderMarkerDeletion allows deleting a marker but never listing or uploading it.
+func TestFolderMarkerDeletion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("delete marker", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, validObjectRequest(Request{BucketID: "bucket", Action: objectaction.Delete, Key: "folder/"}))
+	})
+
+	t.Run("reject marker download", func(t *testing.T) {
+		t.Parallel()
+
+		assert.False(t, validObjectRequest(Request{BucketID: "bucket", Action: objectaction.Download, Key: "folder/"}))
+	})
+
+	t.Run("reject root marker", func(t *testing.T) {
+		t.Parallel()
+
+		assert.False(t, validObjectRequest(Request{BucketID: "bucket", Action: objectaction.Delete, Key: "/"}))
+	})
+}
+
 func TestValidObjectRequest(t *testing.T) {
 	t.Parallel()
 

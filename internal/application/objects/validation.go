@@ -16,8 +16,10 @@ func validObjectRequest(input Request) bool {
 	switch input.Action {
 	case objectaction.List:
 		return validListRequest(input)
-	case objectaction.Download, objectaction.Preview, objectaction.Delete, objectaction.MultipartStart:
+	case objectaction.Download, objectaction.Preview, objectaction.MultipartStart:
 		return objectKeyOnly(input)
+	case objectaction.Delete:
+		return validDeleteRequest(input)
 	case objectaction.Copy:
 		return validCopyRequest(input) && noMultipartParameters(input)
 	case objectaction.MultipartPart:
@@ -54,6 +56,15 @@ func validListRequest(input Request) bool {
 // objectKeyOnly permits a single object without multipart or listing parameters.
 func objectKeyOnly(input Request) bool {
 	return objectpath.ValidObjectKey(input.Key) &&
+		input.SourceKey == "" &&
+		input.Prefix == "" &&
+		input.Continuation == "" &&
+		noMultipartParameters(input)
+}
+
+// validDeleteRequest allows S3 folder markers without permitting unrelated parameters.
+func validDeleteRequest(input Request) bool {
+	return objectpath.ValidDeleteObjectKey(input.Key) &&
 		input.SourceKey == "" &&
 		input.Prefix == "" &&
 		input.Continuation == "" &&

@@ -23,6 +23,16 @@ func ValidObjectKey(key string) bool {
 		!hasControlCharacters(key)
 }
 
+// ValidDeleteObjectKey also permits S3 zero-byte folder markers ending in a slash.
+func ValidDeleteObjectKey(key string) bool {
+	if ValidObjectKey(key) {
+		return true
+	}
+
+	return len(key) <= 1024 && strings.HasSuffix(key, "/") &&
+		ValidObjectKey(strings.TrimSuffix(key, "/"))
+}
+
 // validPrefixShape rejects oversized prefixes, leading slashes and backslashes.
 func validPrefixShape(prefix string) bool {
 	return len(prefix) <= 1024 &&

@@ -75,7 +75,7 @@ func (m *Manager) UploadURL(ctx context.Context, bucketID, alias, objectKey stri
 
 // DeleteURL signs an object-scoped DELETE using the bucket's write-only key.
 func (m *Manager) DeleteURL(ctx context.Context, bucketID, alias, objectKey string, now time.Time) (string, error) {
-	if !validUploadTarget(bucketID, alias, objectKey) {
+	if bucketID == "" || !validBucket(alias) || !objectpath.ValidDeleteObjectKey(objectKey) {
 		return "", errors.New("invalid bucket or object key")
 	}
 

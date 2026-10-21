@@ -48,6 +48,12 @@ func TestObjectOperations(t *testing.T) {
 	assert.Equal(t, "/alias-a/folder/report.pdf", del.Path)
 	assert.NotEqual(t, del.Query().Get("X-Amz-Credential"), got.Query().Get("X-Amz-Credential"))
 
+	marker, err := manager.DeleteURL(context.Background(), "bucket-a", "alias-a", "folder/", now)
+	require.NoError(t, err)
+	markerURL, err := url.Parse(marker)
+	require.NoError(t, err)
+	assert.Equal(t, "/alias-a/folder/", markerURL.Path)
+
 	upload, err := manager.UploadURL(context.Background(), "bucket-a", "alias-a", "folder/new.pdf", now)
 	require.NoError(t, err)
 	put, err := url.Parse(upload)
