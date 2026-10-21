@@ -30,12 +30,12 @@ func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc
 		id, err := authentication.Authenticate(r)
 		if err != nil && !errors.Is(err, auth.ErrUnauthenticated) {
 			logger.ErrorContext(r.Context(), "garage authentication failed", "error", err)
-			httpresponse.Error(w, "garage authentication unavailable; check server logs", http.StatusServiceUnavailable)
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "garage authentication unavailable; check server logs")
 
 			return
 		}
 
-		writeJSON(w, http.StatusOK, sessionResponse{
+		httpresponse.Respond(w, http.StatusOK, sessionResponse{
 			Mode:                   id.Credential.Kind,
 			User:                   id.User,
 			Scope:                  id.Scope,
@@ -53,16 +53,16 @@ func Login(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc {
 		decoder.DisallowUnknownFields()
 
 		if err := decoder.Decode(&credential); err != nil {
-			httpresponse.Error(w, "invalid sign-in request", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "invalid sign-in request")
 			return
 		}
 
 		if err := authentication.Login(w, r, credential); err != nil {
 			if errors.Is(err, auth.ErrUnauthenticated) {
-				httpresponse.Error(w, "invalid Garage credentials", http.StatusUnauthorized)
+				httpresponse.Problem(w, http.StatusUnauthorized, "invalid Garage credentials")
 			} else {
 				logger.ErrorContext(r.Context(), "garage credential validation failed", "error", err)
-				httpresponse.Error(w, "garage authentication unavailable; check Garage Admin API availability and server logs", http.StatusServiceUnavailable)
+				httpresponse.Problem(w, http.StatusServiceUnavailable, "garage authentication unavailable; check Garage Admin API availability and server logs")
 			}
 
 			return
@@ -76,7 +76,7 @@ func Login(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc {
 func Logout(authentication *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := authentication.Logout(w, r); err != nil {
-			httpresponse.Error(w, "could not sign out", http.StatusServiceUnavailable)
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "could not sign out")
 			return
 		}
 

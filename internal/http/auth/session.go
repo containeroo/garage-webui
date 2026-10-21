@@ -1,19 +1,14 @@
 package auth
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"net/http"
-	"time"
 
-	"github.com/containeroo/garage-webui/internal/credential"
-	"github.com/containeroo/garage-webui/internal/storage"
+	core "github.com/containeroo/garage-webui/internal/auth"
 )
 
-// sessionHash derives the database key from the opaque browser cookie.
+// sessionHash derives the database lookup key from an opaque browser cookie.
 func sessionHash(r *http.Request) []byte {
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
@@ -26,106 +21,36 @@ func sessionHash(r *http.Request) []byte {
 	}
 
 	hash := sha256.Sum256(token)
-
 	return hash[:]
 }
 
-// Authenticate decrypts a live session and revalidates its Garage credential.
+// Authenticate validates the browser's session against the core authentication service.
 func (s *Service) Authenticate(r *http.Request) (Identity, error) {
-	hash := sessionHash(r)
-	if hash == nil {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	encrypted, theme, err := s.store.LoadSession(r.Context(), hash)
-	if errors.Is(err, storage.ErrSessionNotFound) {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	if err != nil {
-		return Identity{}, err
-	}
-
-	if len(encrypted) < s.encryption.NonceSize() {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	plaintext, err := s.encryption.Open(nil, encrypted[:s.encryption.NonceSize()], encrypted[s.encryption.NonceSize():], hash)
-	if err != nil {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	var credential Credential
-	if json.Unmarshal(plaintext, &credential) != nil {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	id, err := s.Verify(r.Context(), credential)
-	id.Theme = theme
-
-	return id, err
+	return s.Service.Authenticate(r.Context(), sessionHash(r))
 }
 
-// Login verifies credentials and rotates the browser session.
-func (s *Service) Login(w http.ResponseWriter, r *http.Request, c Credential) error {
-	if _, err := s.Verify(r.Context(), c); err != nil {
-		return err
-	}
-	// Store only the credential fields for the selected sign-in method.
-	if c.Kind == credential.Admin {
-		c.AccessKeyID = ""
-		c.SecretAccessKey = ""
-	} else {
-		c.Token = ""
-	}
-
-	token := make([]byte, 32)
-	if _, err := rand.Read(token); err != nil {
-		return err
-	}
-
-	hash := sha256.Sum256(token)
-	plaintext, err := json.Marshal(c)
+// Login starts a revocable Garage session and writes its browser cookie.
+func (s *Service) Login(w http.ResponseWriter, r *http.Request, credentials Credential) error {
+	token, err := s.Service.Login(r.Context(), sessionHash(r), credentials)
 	if err != nil {
 		return err
 	}
 
-	nonce := make([]byte, s.encryption.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return err
-	}
-
-	encrypted := s.encryption.Seal(nonce, nonce, plaintext, hash[:])
-	if err := s.store.SaveSession(r.Context(), hash[:], encrypted, time.Now().Add(sessionLifetime)); err != nil {
-		return err
-	}
-
-	if old := sessionHash(r); old != nil {
-		if err := s.store.DeleteSession(r.Context(), old); err != nil {
-			_ = s.store.DeleteSession(r.Context(), hash[:])
-			return err
-		}
-	}
-
-	s.cookie(w, cookieName, base64.RawURLEncoding.EncodeToString(token), int(sessionLifetime.Seconds()))
-
+	s.cookie(w, cookieName, token, int(core.SessionLifetime.Seconds()))
 	return nil
 }
 
-// Logout revokes the shared session and clears the browser cookie.
+// Logout revokes the browser session and expires its cookie.
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) error {
-	if hash := sessionHash(r); hash != nil {
-		if err := s.store.DeleteSession(r.Context(), hash); err != nil {
-			return err
-		}
+	if err := s.Service.Logout(r.Context(), sessionHash(r)); err != nil {
+		return err
 	}
 
 	s.cookie(w, cookieName, "", -1)
-
 	return nil
 }
 
-// SetTheme stores the current browser session's appearance preference.
+// SetTheme updates the theme stored for the active browser session.
 func (s *Service) SetTheme(r *http.Request, theme string) error {
-	return s.store.SetSessionTheme(r.Context(), sessionHash(r), theme)
+	return s.Service.SetTheme(r.Context(), sessionHash(r), theme)
 }

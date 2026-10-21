@@ -32,29 +32,29 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := middleware.RequestIdentity(r)
 		if !ok || id.Credential.Kind != credential.S3 {
-			httpresponse.Error(w, "s3 credentials required", http.StatusForbidden)
+			httpresponse.Problem(w, http.StatusForbidden, "s3 credentials required")
 			return
 		}
 		op := admin.Operation(r.PathValue("operation"))
 		if r.Method != http.MethodGet || (op != admin.OpListBuckets && op != admin.OpGetBucketInfo) {
-			httpresponse.Error(w, "s3 credentials cannot access administration", http.StatusForbidden)
+			httpresponse.Problem(w, http.StatusForbidden, "s3 credentials cannot access administration")
 			return
 		}
 
 		names, err := authentication.Buckets(r.Context(), id.Credential)
 		if err != nil {
-			httpresponse.Error(w, "cannot list accessible buckets", http.StatusBadGateway)
+			httpresponse.Problem(w, http.StatusBadGateway, "cannot list accessible buckets")
 			return
 		}
 
 		if op == admin.OpGetBucketInfo {
 			name := r.URL.Query().Get("id")
 			if !slices.Contains(names, name) {
-				httpresponse.Error(w, "bucket not accessible", http.StatusForbidden)
+				httpresponse.Problem(w, http.StatusForbidden, "bucket not accessible")
 				return
 			}
 
-			writeJSON(w, http.StatusOK, bucketInfoResponse{
+			httpresponse.Respond(w, http.StatusOK, bucketInfoResponse{
 				ID:            name,
 				GlobalAliases: []string{name},
 				Keys:          []any{},
@@ -71,6 +71,6 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 			})
 		}
 
-		writeJSON(w, http.StatusOK, result)
+		httpresponse.Respond(w, http.StatusOK, result)
 	}
 }

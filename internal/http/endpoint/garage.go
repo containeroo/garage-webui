@@ -28,18 +28,18 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 
 		operation, exists := admin.ParseOperation(op)
 		if !exists {
-			httpresponse.Error(w, "not found", http.StatusNotFound)
+			httpresponse.Problem(w, http.StatusNotFound, "not found")
 			return
 		}
 
 		method, _ := operation.Method()
 		if method != r.Method {
-			httpresponse.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			httpresponse.Problem(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
 		if !id.Allows(operation) {
-			httpresponse.Error(w, "token does not allow this operation", http.StatusForbidden)
+			httpresponse.Problem(w, http.StatusForbidden, "token does not allow this operation")
 			return
 		}
 
@@ -48,12 +48,12 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 		if r.Method == http.MethodPost {
 			data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 			if err != nil {
-				httpresponse.Error(w, "request too large", http.StatusBadRequest)
+				httpresponse.Problem(w, http.StatusBadRequest, "request too large")
 				return
 			}
 
 			if len(data) > 0 && !json.Valid(data) {
-				httpresponse.Error(w, "invalid JSON", http.StatusBadRequest)
+				httpresponse.Problem(w, http.StatusBadRequest, "invalid JSON")
 				return
 			}
 
@@ -63,15 +63,10 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 		}
 
 		if op == "DeleteBucket" {
-			if !canCleanupBucket(id) {
-				httpresponse.Error(w, "deleting a bucket also requires DeleteKey and GetBucketInfo scopes", http.StatusForbidden)
-				return
-			}
-
 			status, result, err := objectServices.DeleteBucket(r.Context(), id, query.Get("id"))
 			if err != nil {
 				if errors.Is(err, objects.ErrForbidden) {
-					httpresponse.Error(w, "insufficient Garage token scope", http.StatusForbidden)
+					httpresponse.Problem(w, http.StatusForbidden, "insufficient Garage token scope")
 					return
 				}
 
@@ -80,7 +75,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 					status = http.StatusBadGateway
 				}
 
-				httpresponse.Error(w, "could not delete Garage bucket or managed keys", status)
+				httpresponse.Problem(w, status, "could not delete Garage bucket or managed keys")
 
 				return
 			}
@@ -94,7 +89,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 
 		client, err := authentication.AdminClient(id)
 		if err != nil {
-			httpresponse.Error(w, "invalid Garage endpoint", http.StatusBadGateway)
+			httpresponse.Problem(w, http.StatusBadGateway, "invalid Garage endpoint")
 			return
 		}
 
@@ -103,7 +98,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 		if err != nil {
 			logger.Error("garage request failed", "operation", op, "error", err)
 
-			httpresponse.Error(w, "garage is unavailable", http.StatusBadGateway)
+			httpresponse.Problem(w, http.StatusBadGateway, "garage is unavailable")
 
 			return
 		}
@@ -112,9 +107,4 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 		w.WriteHeader(status)
 		_, _ = w.Write(data)
 	}
-}
-
-// canCleanupBucket checks the additional Garage scopes required for key cleanup.
-func canCleanupBucket(id auth.Identity) bool {
-	return id.Allows(admin.OpDeleteKey) && id.Allows(admin.OpGetBucketInfo)
 }

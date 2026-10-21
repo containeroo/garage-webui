@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	auth "github.com/containeroo/garage-webui/internal/auth"
 	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
-	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

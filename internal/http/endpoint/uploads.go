@@ -31,12 +31,12 @@ func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.Hand
 
 		service, err := objectServices.ForDirectIdentity(id)
 		if errors.Is(err, objects.ErrForbidden) {
-			httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
+			httpresponse.Problem(w, http.StatusForbidden, "token does not allow object provisioning")
 			return
 		}
 
 		if err != nil {
-			httpresponse.Error(w, "s3 operations unavailable", http.StatusServiceUnavailable)
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "s3 operations unavailable")
 			return
 		}
 
@@ -52,35 +52,35 @@ func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.Hand
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&input); err != nil {
-			httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "invalid bucket, object key or file size (1 byte to 5 GiB)")
 			return
 		}
 
 		result, err := service.PrepareUpload(r.Context(), kind, input.BucketID, input.Key, input.Size, time.Now())
 		if errors.Is(err, objects.ErrForbidden) {
-			httpresponse.Error(w, "upload permissions required", http.StatusForbidden)
+			httpresponse.Problem(w, http.StatusForbidden, "upload permissions required")
 			return
 		}
 
 		if errors.Is(err, objects.ErrInvalid) {
-			httpresponse.Error(w, "invalid bucket, object key or file size (1 byte to 5 GiB)", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "invalid bucket, object key or file size (1 byte to 5 GiB)")
 			return
 		}
 
 		if errors.Is(err, objects.ErrBucket) {
-			httpresponse.Error(w, "bucket not found or missing a global S3 alias", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "bucket not found or missing a global S3 alias")
 			return
 		}
 
 		if err != nil {
 			logger.Error("prepare direct Garage upload", "error", err, "bucket", input.BucketID)
-			httpresponse.Error(w, "cannot prepare Garage upload", http.StatusBadGateway)
+			httpresponse.Problem(w, http.StatusBadGateway, "cannot prepare Garage upload")
 
 			return
 		}
 
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, presignUploadResponse{
+		httpresponse.Respond(w, http.StatusOK, presignUploadResponse{
 			URL:       result.URL,
 			Method:    result.Method,
 			ExpiresIn: int(s3.URLLifetime.Seconds()),

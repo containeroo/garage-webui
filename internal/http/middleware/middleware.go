@@ -3,38 +3,31 @@ package middleware
 
 import (
 	"log/slog"
-	"net/http"
 
 	"github.com/containeroo/garage-webui/internal/http/auth"
 )
 
-// Policies holds the dependencies used by the HTTP middleware.
+// Policies holds the dependencies used by HTTP access policies.
 type Policies struct {
-	// auth manages authenticated application sessions.
+	// auth manages authenticated browser sessions.
 	auth *auth.Service
 	// s3Origin identifies the S3 origin allowed by browser security policies.
 	s3Origin string
+	// publicURL identifies the allowed origin of browser mutations.
+	publicURL string
+	// limiter controls login attempt budgets across instances.
+	limiter LoginLimiter
 	// logger records application diagnostics.
 	logger *slog.Logger
-	// validMutation validates the origin and CSRF requirements of mutation requests.
-	validMutation func(http.ResponseWriter, *http.Request) bool
-	// allowLogin checks whether the request is within its login attempt budget.
-	allowLogin func(*http.Request) bool
 }
 
-// New constructs the middleware policies with their server dependencies.
-func New(
-	authentication *auth.Service,
-	s3Origin string,
-	logger *slog.Logger,
-	validMutation func(http.ResponseWriter, *http.Request) bool,
-	allowLogin func(*http.Request) bool,
-) *Policies {
+// New constructs HTTP policies from their real dependencies.
+func New(authentication *auth.Service, s3Origin, publicURL string, limiter LoginLimiter, logger *slog.Logger) *Policies {
 	return &Policies{
-		auth:          authentication,
-		s3Origin:      s3Origin,
-		logger:        logger,
-		validMutation: validMutation,
-		allowLogin:    allowLogin,
+		auth:      authentication,
+		s3Origin:  s3Origin,
+		publicURL: publicURL,
+		limiter:   limiter,
+		logger:    logger,
 	}
 }

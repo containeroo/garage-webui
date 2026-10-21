@@ -44,7 +44,7 @@ func (h *objectStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// File transfers may outlive the API server's short response-write deadline.
 	err := http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	if err != nil && !errors.Is(err, http.ErrNotSupported) {
-		httpresponse.Error(w, "cannot start streamed transfer", http.StatusInternalServerError)
+		httpresponse.InternalServerError(logger, w, err)
 		return
 	}
 
@@ -100,10 +100,10 @@ func streamErrorHandler(logger *slog.Logger, input transferRequest) func(http.Re
 		}
 		var oversized *http.MaxBytesError
 		if errors.As(err, &oversized) {
-			httpresponse.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			httpresponse.Problem(w, http.StatusRequestEntityTooLarge, "request body too large")
 			return
 		}
 		logger.Warn("S3 transfer failed", "bucket", input.BucketID, "action", input.Action)
-		httpresponse.Error(w, "cannot reach Garage S3; check the server-side endpoint and network", http.StatusBadGateway)
+		httpresponse.Problem(w, http.StatusBadGateway, "cannot reach Garage S3; check the server-side endpoint and network")
 	}
 }

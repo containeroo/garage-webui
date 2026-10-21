@@ -49,18 +49,19 @@ func newServer(
 		}
 	}
 
-	return server.New(
-		authentication,
-		assembly.New(authentication, db, cfg.Server.PublicURL),
-		db,
-		cfg.S3PublicURL,
-		cfg.Server.PublicURL,
-		cfg.Server.RoutePrefix,
-		logger,
-		cfg.Logging.AccessLog,
-		assets, availableThemes,
-		endpoint.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
-	), nil
+	return server.New(server.Config{
+		Authentication:  authentication,
+		Objects:         assembly.New(authentication.Service, db, cfg.Server.PublicURL),
+		LoginLimiter:    db,
+		S3Origin:        cfg.S3PublicURL,
+		PublicURL:       cfg.Server.PublicURL,
+		RoutePrefix:     cfg.Server.RoutePrefix,
+		Logger:          logger,
+		AccessLog:       cfg.Logging.AccessLog,
+		Assets:          assets,
+		Themes:          availableThemes,
+		TransferOptions: endpoint.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
+	}), nil
 }
 
 // Handler returns the application handler.

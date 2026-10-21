@@ -27,7 +27,7 @@ func RequestIdentity(r *http.Request) (identity auth.Identity, found bool) {
 func (s *Policies) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.auth == nil {
-			httpresponse.Error(w, "authentication required", http.StatusUnauthorized)
+			httpresponse.Problem(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
@@ -38,7 +38,7 @@ func (s *Policies) Authenticate(next http.Handler) http.Handler {
 				status = 401
 			}
 
-			httpresponse.Error(w, "authentication required", status)
+			httpresponse.Problem(w, status, "authentication required")
 
 			return
 		}

@@ -37,30 +37,45 @@ type Server struct {
 	transferOptions endpoint.TransferOptions
 }
 
-// New constructs the HTTP server.
-func New(
-	authentication *auth.Service,
-	objectServices endpoint.ObjectServices,
-	loginLimiter middleware.LoginLimiter,
-	s3Origin string,
-	publicURL, prefix string,
-	logger *slog.Logger,
-	accessLog bool,
-	assets fs.FS,
-	themeCatalog []themes.Theme,
-	transferOptions endpoint.TransferOptions,
-) *Server {
+// Config describes the services and settings needed to serve the browser application.
+type Config struct {
+	// Authentication manages browser sessions and Garage token verification.
+	Authentication *auth.Service
+	// Objects provides identity-scoped object operations.
+	Objects endpoint.ObjectServices
+	// LoginLimiter applies shared login attempt restrictions.
+	LoginLimiter middleware.LoginLimiter
+	// S3Origin is the browser-accessible S3 endpoint for direct transfers.
+	S3Origin string
+	// PublicURL identifies the console's public origin.
+	PublicURL string
+	// RoutePrefix sets the base path for the application.
+	RoutePrefix string
+	// Logger records request and diagnostic details.
+	Logger *slog.Logger
+	// AccessLog enables HTTP request logging.
+	AccessLog bool
+	// Assets provides the embedded frontend.
+	Assets fs.FS
+	// Themes lists the available application themes.
+	Themes []themes.Theme
+	// TransferOptions configures backend S3 transport behavior.
+	TransferOptions endpoint.TransferOptions
+}
+
+// New constructs the HTTP server from documented dependencies.
+func New(cfg Config) *Server {
 	return &Server{
-		themes:          themeCatalog,
-		transferOptions: transferOptions,
-		assets:          assets,
-		objects:         objectServices,
-		loginLimiter:    loginLimiter,
-		s3Origin:        s3Origin,
-		auth:            authentication,
-		publicURL:       publicURL,
-		prefix:          prefix,
-		logger:          logger,
-		accessLog:       accessLog,
+		themes:          cfg.Themes,
+		transferOptions: cfg.TransferOptions,
+		assets:          cfg.Assets,
+		objects:         cfg.Objects,
+		loginLimiter:    cfg.LoginLimiter,
+		s3Origin:        cfg.S3Origin,
+		auth:            cfg.Authentication,
+		publicURL:       cfg.PublicURL,
+		prefix:          cfg.RoutePrefix,
+		logger:          cfg.Logger,
+		accessLog:       cfg.AccessLog,
 	}
 }

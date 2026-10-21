@@ -115,7 +115,16 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	defer s3server.Close()
 	authentication, err := auth.New(store, auth.Config{PublicURL: "http://console.example", GarageURL: upstream.URL, S3URL: s3server.URL, S3PublicURL: "https://browser-s3.example", Region: "garage", SessionSecret: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))})
 	require.NoError(t, err)
-	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil, endpoint.TransferOptions{ResponseHeaderTimeout: time.Second}).Handler()
+	handler := New(Config{
+		Authentication:  authentication,
+		Objects:         assembly.New(authentication.Service, store, "http://console.example"),
+		LoginLimiter:    store,
+		S3Origin:        "https://browser-s3.example",
+		PublicURL:       "http://console.example",
+		Logger:          slog.Default(),
+		Assets:          web.Assets,
+		TransferOptions: endpoint.TransferOptions{ResponseHeaderTimeout: time.Second},
+	}).Handler()
 	call := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:9000"

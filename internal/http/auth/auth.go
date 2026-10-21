@@ -1,120 +1,65 @@
-// Package auth authenticates Garage credentials and manages revocable browser sessions.
+// Package auth adapts core Garage authentication to browser sessions and cookies.
 package auth
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/base64"
 	"errors"
 	"net/url"
-	"slices"
-	"time"
 
-	"github.com/containeroo/garage-webui/internal/credential"
-	"github.com/containeroo/garage-webui/internal/garage/admin"
+	core "github.com/containeroo/garage-webui/internal/auth"
 	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/containeroo/garage-webui/internal/utils"
 )
 
-// ErrUnauthenticated means Garage rejected the credential or the session is invalid.
-var ErrUnauthenticated = errors.New("invalid Garage credentials")
+// Credential describes a Garage secret used to authenticate a browser session.
+type Credential = core.Credential
 
-const (
-	cookieName      = "garage_webui_session"
-	sessionLifetime = 8 * time.Hour
-)
+// Identity contains the current Garage identity and session theme.
+type Identity = core.Identity
 
-// Credential is encrypted at rest and is never included in session responses.
-type Credential struct {
-	// Kind identifies the credential mechanism.
-	Kind credential.Kind `json:"kind"`
-	// Token contains the Garage admin token.
-	Token string `json:"token,omitempty"`
-	// AccessKeyID identifies the S3 access key.
-	AccessKeyID string `json:"accessKeyId,omitempty"`
-	// SecretAccessKey contains the secret used to sign S3 requests.
-	SecretAccessKey string `json:"secretAccessKey,omitempty"`
-}
+// ErrUnauthenticated reports rejected credentials or an invalid browser session.
+var ErrUnauthenticated = core.ErrUnauthenticated
 
-// Identity contains fresh Garage metadata and the session's credential.
-type Identity struct {
-	// Credential holds verified credentials for server-side use.
-	Credential Credential
-	// User contains the session display name.
-	User string
-	// Scope lists the allowed admin operations.
-	Scope []string
-	// Theme contains the selected theme identifier.
-	Theme string
-}
+const cookieName = "garage_webui_session"
 
-// Allows checks the current Garage admin-token scope.
-func (id Identity) Allows(operation admin.Operation) bool {
-	return id.Credential.Kind == credential.Admin && (slices.Contains(id.Scope, "*") || slices.Contains(id.Scope, string(operation)))
-}
-
-// Service owns only deployment endpoints and session encryption, never a shared Garage credential.
+// Service exposes core authentication and HTTP session behavior.
 type Service struct {
-	// store persists encrypted authentication sessions.
-	store storage.Sessions
-	// encryption encrypts and authenticates stored credentials.
-	encryption cipher.AEAD
-	// GarageURL specifies the Garage Admin API endpoint.
-	GarageURL string
-	// S3URL specifies the server-side S3 endpoint.
-	S3URL string
-	// S3PublicURL specifies the browser-accessible S3 endpoint.
-	S3PublicURL string
-	// Region specifies the S3 signing region.
-	Region string
-	// publicURL specifies the browser-facing application URL.
-	publicURL string
-	// prefix specifies the application route prefix.
+	// Service provides Garage credential verification and encrypted session persistence.
+	*core.Service
+
+	// prefix is the deployment-relative browser cookie path.
 	prefix string
-	// secure requires HTTPS for session cookies.
+	// secure requires HTTPS-only session cookies.
 	secure bool
 }
 
-// Config describes deployment endpoints and the credential encryption key.
+// Config specifies Garage endpoints and browser-session settings.
 type Config struct {
-	// PublicURL specifies the browser-facing application URL.
+	// PublicURL specifies the externally visible web console origin.
 	PublicURL string
-	// RoutePrefix specifies the application route prefix.
+	// RoutePrefix specifies the deployment URL path prefix.
 	RoutePrefix string
 	// GarageURL specifies the Garage Admin API endpoint.
 	GarageURL string
-	// S3URL specifies the server-side S3 endpoint.
+	// S3URL specifies the server-side Garage S3 endpoint.
 	S3URL string
-	// S3PublicURL specifies the browser-accessible S3 endpoint.
+	// S3PublicURL specifies the browser-reachable Garage S3 endpoint.
 	S3PublicURL string
-	// Region specifies the S3 signing region.
+	// Region specifies the Garage S3 signing region.
 	Region string
-	// SessionSecret provides the secret used to derive session encryption keys.
+	// SessionSecret encrypts session credentials stored in the database.
 	SessionSecret string
 }
 
-// New validates deployment configuration and prepares session encryption.
+// New validates browser configuration and creates a core authentication service.
 func New(store storage.Sessions, cfg Config) (*Service, error) {
-	if store == nil {
-		return nil, errors.New("session storage is required")
-	}
-
-	key, err := base64.StdEncoding.DecodeString(cfg.SessionSecret)
-	if err != nil || len(key) != 32 {
-		return nil, errors.New("session-secret must be a base64-encoded 32-byte key")
-	}
-
-	block, err := aes.NewCipher(key)
+	coreService, err := core.New(store, core.Config{
+		GarageURL:     cfg.GarageURL,
+		S3URL:         cfg.S3URL,
+		S3PublicURL:   cfg.S3PublicURL,
+		Region:        cfg.Region,
+		SessionSecret: cfg.SessionSecret,
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := admin.New(cfg.GarageURL, ""); err != nil {
 		return nil, err
 	}
 
@@ -124,41 +69,15 @@ func New(store storage.Sessions, cfg Config) (*Service, error) {
 	}
 
 	return &Service{
-		store:       store,
-		encryption:  aead,
-		GarageURL:   cfg.GarageURL,
-		S3URL:       cfg.S3URL,
-		S3PublicURL: cfg.S3PublicURL,
-		Region:      cfg.Region,
-		publicURL:   cfg.PublicURL,
-		prefix:      cfg.RoutePrefix,
-		secure:      origin.Scheme == "https",
+		Service: coreService,
+		prefix:  cfg.RoutePrefix,
+		secure:  origin.Scheme == "https",
 	}, nil
 }
 
-// hasNoCredentials prüft, ob keine Benutzerdaten (User/Password) hinterlegt sind.
-func hasNoCredentials(origin *url.URL) bool {
-	return origin.User == nil
-}
-
-// hasNoURLExtras prüft, ob die URL frei von Query-Parametern und Fragmenten ist.
-func hasNoURLExtras(origin *url.URL) bool {
-	return origin.RawQuery == "" && !origin.ForceQuery && origin.Fragment == ""
-}
-
-// hasNoPathComponents prüft, ob der Pfad leer oder lediglich der Root-Pfad "/" ist.
-func hasNoPathComponents(origin *url.URL) bool {
-	return origin.Path == "" || origin.Path == "/"
-}
-
-// validPublicOrigin akzeptiert einen Origin ohne Credentials, einen Pfad oder URL-Extras.
+// validPublicOrigin accepts an HTTP(S) origin without credentials, paths or extras.
 func validPublicOrigin(origin *url.URL) bool {
-	if origin == nil || origin.Host == "" {
-		return false
-	}
-
-	return utils.HasValidScheme(origin) &&
-		hasNoCredentials(origin) &&
-		hasNoURLExtras(origin) &&
-		hasNoPathComponents(origin)
+	return origin != nil && origin.Host != "" && utils.HasValidScheme(origin) &&
+		origin.User == nil && origin.RawQuery == "" && !origin.ForceQuery && origin.Fragment == "" &&
+		(origin.Path == "" || origin.Path == "/")
 }

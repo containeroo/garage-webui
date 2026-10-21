@@ -49,13 +49,13 @@ func TransferObject(services ObjectServices, logger *slog.Logger, options Transf
 func (h *objectTransfer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	input, err := decodeTransferRequest(r)
 	if err != nil {
-		httpresponse.Error(w, err.Error(), transferErrorStatus(err))
+		httpresponse.Problem(w, transferErrorStatus(err), err.Error())
 		return
 	}
 
 	plan, err := h.prepare(r, input)
 	if err != nil {
-		httpresponse.Error(w, "cannot prepare object operation", transferErrorStatus(err))
+		httpresponse.Problem(w, transferErrorStatus(err), "cannot prepare object operation")
 		return
 	}
 

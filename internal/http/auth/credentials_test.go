@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"github.com/containeroo/garage-webui/internal/credential"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -152,6 +153,16 @@ func TestAdminValidationErrors(t *testing.T) {
 func TestRejectMixedCredentials(t *testing.T) {
 	t.Parallel()
 
-	assert.False(t, validAdminCredential(Credential{Token: "a", AccessKeyID: "b"}), "mixed Garage credential types accepted")
-	assert.False(t, validS3Credential(Credential{Token: "a", AccessKeyID: "b", SecretAccessKey: "secret"}), "mixed Garage credential types accepted")
+	service, err := New(&testStore{records: map[string]testRecord{}}, Config{
+		GarageURL:     "http://garage.example:3903",
+		PublicURL:     "http://console.example",
+		SessionSecret: base64.StdEncoding.EncodeToString(make([]byte, 32)),
+	})
+	require.NoError(t, err)
+
+	_, err = service.Verify(context.Background(), Credential{Kind: credential.Admin, Token: "a", AccessKeyID: "b"})
+	require.ErrorIs(t, err, ErrUnauthenticated)
+
+	_, err = service.Verify(context.Background(), Credential{Kind: credential.S3, Token: "a", AccessKeyID: "b", SecretAccessKey: "secret"})
+	require.ErrorIs(t, err, ErrUnauthenticated)
 }

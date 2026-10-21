@@ -21,7 +21,7 @@ func OwnProfile() http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := middleware.RequestIdentity(r)
-		writeJSON(w, http.StatusOK, profileResponse{Username: id.User, Theme: id.Theme})
+		httpresponse.Respond(w, http.StatusOK, profileResponse{Username: id.User, Theme: id.Theme})
 	}
 }
 
@@ -34,18 +34,18 @@ func UpdateOwnTheme(authentication *auth.Service, catalog []themes.Theme) http.H
 			Theme string `json:"theme"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
-			httpresponse.Error(w, "invalid theme", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "invalid theme")
 			return
 		}
 
 		theme, found := themes.Find(catalog, input.Theme)
 		if !found {
-			httpresponse.Error(w, "unknown theme", http.StatusBadRequest)
+			httpresponse.Problem(w, http.StatusBadRequest, "unknown theme")
 			return
 		}
 
 		if err := authentication.SetTheme(r, theme.Title); err != nil {
-			httpresponse.Error(w, "cannot save theme", http.StatusInternalServerError)
+			httpresponse.InternalServerError(nil, w, err)
 			return
 		}
 
@@ -56,6 +56,6 @@ func UpdateOwnTheme(authentication *auth.Service, catalog []themes.Theme) http.H
 // ThemeCatalog exposes the installed themes for the UI.
 func ThemeCatalog(catalog []themes.Theme) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, catalog)
+		httpresponse.Respond(w, http.StatusOK, catalog)
 	}
 }

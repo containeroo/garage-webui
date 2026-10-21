@@ -9,10 +9,10 @@ import (
 
 	"github.com/containeroo/garage-webui/internal/application/buckets"
 	"github.com/containeroo/garage-webui/internal/application/objects"
+	auth "github.com/containeroo/garage-webui/internal/auth"
 	"github.com/containeroo/garage-webui/internal/credential"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/garage/credentials"
-	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/s3"
 	"github.com/containeroo/garage-webui/internal/signing"
 )

@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"net/http"
 
@@ -14,22 +13,6 @@ import (
 type LoginLimiter interface {
 	// AllowLogin records a login attempt and reports whether the peer remains within its budget.
 	AllowLogin(context.Context, string) (bool, error)
-}
-
-// AllowLogin checks the immediate TCP peer without trusting forwarded headers.
-func AllowLogin(limiter LoginLimiter, logger *slog.Logger) func(*http.Request) bool {
-	return func(r *http.Request) bool {
-		peer, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			peer = r.RemoteAddr
-		}
-		permitted, err := limiter.AllowLogin(r.Context(), peer)
-		if err != nil {
-			logger.Error("login rate limit unavailable", "error", err)
-			return false // Fail closed when the database is unavailable.
-		}
-		return permitted
-	}
 }
 
 // LimitLogin rate-limits password attempts and optionally sets Retry-After.
@@ -48,7 +31,7 @@ func (s *Policies) LimitLogin(retryAfter bool) httpkitmiddleware.Middleware {
 					message = "too many login attempts"
 				}
 
-				httpresponse.Error(w, message, http.StatusTooManyRequests)
+				httpresponse.Problem(w, http.StatusTooManyRequests, message)
 
 				return
 			}
@@ -56,4 +39,20 @@ func (s *Policies) LimitLogin(retryAfter bool) httpkitmiddleware.Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// allowLogin checks the immediate TCP peer without trusting forwarded headers.
+func (s *Policies) allowLogin(r *http.Request) bool {
+	peer, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		peer = r.RemoteAddr
+	}
+
+	permitted, err := s.limiter.AllowLogin(r.Context(), peer)
+	if err != nil {
+		s.logger.Error("login rate limit unavailable", "error", err)
+		return false
+	}
+
+	return permitted
 }

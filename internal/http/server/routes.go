@@ -11,13 +11,7 @@ import (
 // Handler returns the application routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	policies := middleware.New(
-		s.auth,
-		s.s3Origin,
-		s.logger,
-		middleware.ValidMutation(s.publicURL),
-		middleware.AllowLogin(s.loginLimiter, s.logger),
-	)
+	policies := middleware.New(s.auth, s.s3Origin, s.publicURL, s.loginLimiter, s.logger)
 
 	mux.Handle(http.MethodGet+" /api/session", endpoint.Session(s.auth, s.logger))
 	mux.Handle(http.MethodPost+" /api/login",
@@ -102,7 +96,7 @@ func (s *Server) Handler() http.Handler {
 			policies.Mutation,
 		))
 
-	mux.Handle(http.MethodGet+"/", endpoint.Frontend(s.assets, s.prefix))
+	mux.Handle(http.MethodGet+" /", endpoint.Frontend(s.assets, s.prefix))
 
 	middlewares := []httpkitmiddleware.Middleware{
 		policies.SecurityHeaders(),
