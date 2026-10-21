@@ -23,6 +23,8 @@ type Service struct {
 	store storage.Sessions
 	// encryption encrypts and authenticates stored credentials.
 	encryption cipher.AEAD
+	// encryptionKey is the secret for job ownership fingerprints.
+	encryptionKey []byte
 	// GarageURL specifies the Garage Admin API endpoint.
 	GarageURL string
 	// S3URL specifies the server-side S3 endpoint.
@@ -73,11 +75,12 @@ func New(store storage.Sessions, cfg Config) (*Service, error) {
 	}
 
 	return &Service{
-		store:       store,
-		encryption:  aead,
-		GarageURL:   cfg.GarageURL,
-		S3URL:       cfg.S3URL,
-		S3PublicURL: cfg.S3PublicURL,
-		Region:      cfg.Region,
+		store:         store,
+		encryptionKey: append([]byte(nil), key...),
+		encryption:    aead,
+		GarageURL:     cfg.GarageURL,
+		S3URL:         cfg.S3URL,
+		S3PublicURL:   cfg.S3PublicURL,
+		Region:        cfg.Region,
 	}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 
+	"github.com/containeroo/garage-webui/internal/application/jobs"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/http/endpoint"
 	"github.com/containeroo/garage-webui/internal/http/middleware"
@@ -13,6 +14,8 @@ import (
 
 // Server combines authenticated routes and the static frontend.
 type Server struct {
+	// jobs coordinates durable deletion tasks.
+	jobs *jobs.Service
 	// themes lists the available application themes.
 	themes []themes.Theme
 	// assets provides the embedded frontend files.
@@ -39,6 +42,8 @@ type Server struct {
 
 // Config describes the services and settings needed to serve the browser application.
 type Config struct {
+	// Jobs coordinates persistent deletion tasks.
+	Jobs *jobs.Service
 	// Authentication manages browser sessions and Garage token verification.
 	Authentication *auth.Service
 	// Objects provides identity-scoped object operations.
@@ -66,6 +71,7 @@ type Config struct {
 // New constructs the HTTP server from documented dependencies.
 func New(cfg Config) *Server {
 	return &Server{
+		jobs:            cfg.Jobs,
 		themes:          cfg.Themes,
 		transferOptions: cfg.TransferOptions,
 		assets:          cfg.Assets,

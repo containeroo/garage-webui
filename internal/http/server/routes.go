@@ -96,6 +96,29 @@ func (s *Server) Handler() http.Handler {
 			policies.Mutation,
 		))
 
+	mux.Handle(http.MethodPost+" /api/jobs/deletions",
+		httpkitmiddleware.Chain(
+			endpoint.CreateDeletionJob(s.jobs),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+	mux.Handle(http.MethodGet+" /api/jobs",
+		httpkitmiddleware.Chain(
+			endpoint.ListDeletionJobs(s.jobs),
+			policies.Authenticate,
+		))
+	mux.Handle(http.MethodGet+" /api/jobs/events",
+		httpkitmiddleware.Chain(
+			endpoint.StreamDeletionJobs(s.jobs, s.auth),
+			policies.Authenticate,
+		))
+	mux.Handle(http.MethodPost+" /api/jobs/{id}/cancel",
+		httpkitmiddleware.Chain(
+			endpoint.CancelDeletionJob(s.jobs),
+			policies.Authenticate,
+			policies.Mutation,
+		))
+
 	mux.Handle(http.MethodGet+" /", endpoint.Frontend(s.assets, s.prefix))
 
 	middlewares := []httpkitmiddleware.Middleware{

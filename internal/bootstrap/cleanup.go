@@ -41,4 +41,7 @@ func (a *Application) cleanupExpiredRecords(ctx context.Context, logger *slog.Lo
 	if err := a.db.CleanupExpiredLoginAttempts(cleanupCtx); err != nil && ctx.Err() == nil {
 		logger.Warn("login limiter cleanup failed", "error", err)
 	}
+	if err := a.jobs.Cleanup(cleanupCtx); err != nil && ctx.Err() == nil {
+		logger.Warn("deletion job cleanup failed", "error", err)
+	}
 }

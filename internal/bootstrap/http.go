@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/containeroo/garage-webui/internal/application/jobs"
 	"github.com/containeroo/garage-webui/internal/assembly"
 	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/garage-webui/internal/http/auth"
@@ -23,7 +24,7 @@ func newServer(
 	db storage.Store,
 	assets fs.FS,
 	availableThemes []themes.Theme,
-) (*server.Server, error) {
+) (*server.Server, *jobs.Service, error) {
 	authentication, err := auth.New(db, auth.Config{
 		PublicURL:     cfg.Server.PublicURL,
 		RoutePrefix:   cfg.Server.RoutePrefix,
@@ -34,24 +35,31 @@ func newServer(
 		SessionSecret: cfg.SessionSecret,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if authentication.S3URL != "" {
 		if _, err := s3.NewClient(authentication.S3URL, cfg.S3Region, "validation", "validation"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if cfg.S3PublicURL != "" {
 		if _, err := s3.New(cfg.S3PublicURL, cfg.S3Region, "validation", "validation", cfg.Server.PublicURL); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
+	objectsFactory := assembly.New(authentication.Service, db, cfg.Server.PublicURL)
+	backgroundJobs, err := jobs.New(db, authentication.Service, objectsFactory, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return server.New(server.Config{
+		Jobs:            backgroundJobs,
 		Authentication:  authentication,
-		Objects:         assembly.New(authentication.Service, db, cfg.Server.PublicURL),
+		Objects:         objectsFactory,
 		LoginLimiter:    db,
 		S3Origin:        cfg.S3PublicURL,
 		PublicURL:       cfg.Server.PublicURL,
@@ -61,7 +69,7 @@ func newServer(
 		Assets:          assets,
 		Themes:          availableThemes,
 		TransferOptions: endpoint.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
-	}), nil
+	}), backgroundJobs, nil
 }
 
 // Handler returns the application handler.

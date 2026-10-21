@@ -26,6 +26,7 @@ type Sessions interface {
 
 // Store is the persistence required by the application, independently of SQL dialect.
 type Store interface {
+	DeletionJobs
 	Sessions
 	signing.BucketLocker
 	// AllowLogin records a login attempt and reports whether the peer remains within its budget.

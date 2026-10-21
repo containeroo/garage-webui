@@ -45,3 +45,11 @@ Sign-in attempts are limited per immediate network peer on each process. Use ing
 An admin token used for object operations needs `GetBucketInfo`, `GetKeyInfo`, `CreateKey`, `AllowBucketKey`, `DenyBucketKey`. Optional direct transfers additionally require `UpdateBucket` for CORS provisioning. The Web UI checks these scopes before using managed signing keys. Bucket deletion also needs `DeleteBucket` and `DeleteKey` so the Web UI can revoke its managed keys. Direct S3 sign-in uses the key's own Garage permissions instead.
 
 Login rate limits are persisted in the configured database (shared across replicas with PostgreSQL), using a hash of the connecting network peer. The Web UI does not trust unconfigured forwarded-IP headers. Behind a reverse proxy, enable appropriate ingress rate limiting so clients sharing its source address do not share the application's allowance.
+
+## Persistent recursive deletion
+
+Deleting a selected folder creates a persistent job in the configured database. The Web UI returns immediately while the backend deletes objects and nested folders, including zero-byte folder markers. The **Background operations** panel reloads job state after browser restarts and uses server-sent events to display updates from all replicas. Other sessions using the **same Garage credential** can view and cancel that job; unrelated credentials cannot access it.
+
+The job stores the initiating Garage credential encrypted using `--session-secret`, independently of the eight-hour browser session. Logging out or closing the tab does not cancel an explicitly started deletion. The worker revalidates the Garage credential for its operations; revocation or Garage credential expiry stops the job. On normal completion, failure, or cancellation, the stored credential is erased. Completed job metadata is retained for seven days.
+
+Background deletion retries any unfinished work after a process crash by reclaiming the job lease and scanning the remaining S3 keys again. The displayed count is the number of successful delete operations; it does not attempt to estimate a completion percentage. Cancelling stops future operations once the worker observes the request, but cannot undo objects already deleted. Keep `--session-secret` stable across restarts and replicas or existing encrypted jobs will become unreadable.

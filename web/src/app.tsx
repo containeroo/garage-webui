@@ -27,6 +27,7 @@ import { DialogPanel } from "./components/ui/dialog";
 import { Button } from "./components/ui/button";
 import { UploadDialog } from "./components/upload";
 import { BucketObjects } from "./components/objects";
+import { BackgroundJobs } from "./components/jobs";
 import { BucketSettings } from "./components/bucket-settings";
 import { BucketPermissions } from "./components/bucket-permissions";
 import { Cluster } from "./components/cluster";
@@ -148,6 +149,12 @@ function Workspace({
   const [editingKey, setEditingKey] = useState<string>();
 
   useEffect(() => () => bucketRequest.current?.abort(), []);
+
+  // handleJobCompleted refreshes listings when a background deletion completes.
+  const handleJobCompleted = useCallback(
+    () => setObjectsVersion((value) => value + 1),
+    [],
+  );
 
   // closeBucket cancels pending detail loads before returning to workspace navigation.
   function closeBucket() {
@@ -287,6 +294,7 @@ function Workspace({
           </button>
         </header>
         <div className="content">
+          <BackgroundJobs onCompleted={handleJobCompleted} />
           {!details && (
             <div className="page-heading">
               <div>

@@ -28,3 +28,7 @@ make screenshots
 This target starts the same isolated stack and captures the real UI with Playwright. Screenshots are written to `docs/content/assets/screenshots` and referenced by the README and documentation.
 
 SQLite storage tests run without external services. Run the complete browser suite against SQLite with `E2E_DATABASE=sqlite make test-e2e`; this starts Garage without a PostgreSQL container and removes the disposable SQLite database on completion. CI runs the browser suite against both databases.
+
+## Background deletion checks
+
+The job worker is started during application bootstrap. Both PostgreSQL and SQLite apply a deletion-job schema migration automatically. SQLite job tests cover lease takeover and cancellation; the job integration test uses a fake Garage S3 API to verify nested deletion. Run `go test ./internal/application/jobs/... ./internal/auth/... ./internal/sqlite/...` and `make test-e2e` after applying these files. Large recursive deletions are destructive: use a disposable Garage bucket for manual verification.

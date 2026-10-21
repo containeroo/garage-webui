@@ -25,7 +25,6 @@ import { Empty } from "./storage";
 import {
   copyObject,
   deleteObject,
-  deleteFolder,
   listObjects,
   prepareOperation,
   signDirectOperation,
@@ -33,6 +32,7 @@ import {
   type ObjectPage,
 } from "../s3";
 import { formatBinaryBytes as formatBytes } from "../lib/format";
+import { startDeletion } from "../jobs";
 
 const emptyPage: ObjectPage = { items: [], folders: [], nextToken: "" };
 
@@ -278,53 +278,28 @@ export function BucketObjects({
     }
   }
 
-  /** remove deletes selected objects and recursively empties selected virtual folders. */
+  /** remove schedules durable deletion independently of this browser's lifetime. */
   async function remove(keys: string[], folders: string[] = []) {
     if (!keys.length && !folders.length) return;
-
     const message = folders.length
-      ? `Delete ${folders.length} folder(s) and ${keys.length} file(s)? Every object inside the selected folders and their subfolders will be deleted recursively. This cannot be undone.`
-      : `Delete ${keys.length} selected object(s)? This cannot be undone.`;
+      ? `Delete ${folders.length} folder(s) and ${keys.length} file(s)? Every object inside the selected folders and their subfolders will be deleted recursively in the background. This cannot be undone.`
+      : `Delete ${keys.length} selected object(s) in the background? This cannot be undone.`;
     if (!(await confirm(message))) return;
-
     setBusy(true);
     setError("");
     setDeletionError("");
-    setDeletionProgress("Deleting objects…");
-    const failures: string[] = [];
-    let deleted = 0;
-    /** updateProgress shows progress for every successfully removed object. */
-    function updateProgress() {
-      deleted++;
-      setDeletionProgress(`Deleted ${deleted} object(s)…`);
-    }
     try {
-      // Reuse the current Garage-scoped S3 operations for every deletion.
-      for (const folder of folders) {
-        try {
-          await deleteFolder(bucketId, folder, updateProgress);
-        } catch (cause) {
-          failures.push(`${folder}: ${errorMessage(cause)}`);
-        }
-      }
-      for (const key of keys) {
-        try {
-          await deleteObject(bucketId, key);
-          updateProgress();
-        } catch (cause) {
-          failures.push(`${key}: ${errorMessage(cause)}`);
-        }
-      }
+      await startDeletion(bucketId, keys, folders);
+      setDeletionProgress(
+        "Deletion queued. Progress is available under Background operations, even after reopening the browser.",
+      );
       setActiveItem(undefined);
       clearPreview();
       resetPage();
       refresh();
-      if (failures.length)
-        setDeletionError(
-          `${failures.length} deletion(s) failed after ${deleted} object(s) deleted: ${failures.slice(0, 3).join("; ")}`,
-        );
+    } catch (cause) {
+      setDeletionError(errorMessage(cause));
     } finally {
-      setDeletionProgress("");
       setBusy(false);
     }
   }

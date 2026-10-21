@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/containeroo/garage-webui/internal/application/jobs"
 	"github.com/containeroo/garage-webui/internal/database"
 	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/garage-webui/internal/http/server"
@@ -17,6 +18,12 @@ import (
 
 // Application owns initialized services and HTTP handlers.
 type Application struct {
+	// jobs coordinates durable background tasks.
+	jobs *jobs.Service
+	// stopJobs interrupts the background worker during shutdown.
+	stopJobs context.CancelFunc
+	// jobsDone waits until background work releases database resources.
+	jobsDone sync.WaitGroup
 	// db provides persistent application storage.
 	db storage.Store
 	// server serves the application HTTP endpoints.
@@ -39,7 +46,7 @@ func New(ctx context.Context, cfg flags.Config, logger *slog.Logger, assets, the
 		return nil, err
 	}
 
-	httpServer, err := newServer(cfg, logger, db, assets, availableThemes)
+	httpServer, backgroundJobs, err := newServer(cfg, logger, db, assets, availableThemes)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -47,15 +54,22 @@ func New(ctx context.Context, cfg flags.Config, logger *slog.Logger, assets, the
 
 	app := &Application{
 		db:     db,
+		jobs:   backgroundJobs,
 		server: httpServer,
 	}
 	app.startCleanup(ctx, logger)
+	workerCtx, stopJobs := context.WithCancel(ctx)
+	app.stopJobs = stopJobs
+	app.jobsDone.Add(1)
+	go func() { defer app.jobsDone.Done(); backgroundJobs.Run(workerCtx) }()
 
 	return app, nil
 }
 
 // Close releases infrastructure resources.
 func (a *Application) Close() {
+	a.stopJobs()
+	a.jobsDone.Wait()
 	a.stopCleanup()
 	a.cleanupDone.Wait()
 	a.db.Close()

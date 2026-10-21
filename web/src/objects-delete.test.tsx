@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { BucketObjects } from "./components/objects";
 import { QuestionProvider } from "./components/ui/questions";
 import * as s3 from "./s3";
+import * as jobs from "./jobs";
 
 /** renderObjects mounts the authenticated object browser with confirmation dialogs. */
 function renderObjects(canDelete = true) {
@@ -32,45 +33,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("selecting a folder offers recursive delete and refreshes on confirmation", async () => {
-  const list = vi.spyOn(s3, "listObjects").mockResolvedValue({
-    folders: ["backups/"],
-    items: [],
-    nextToken: "",
-  });
-  const remove = vi.spyOn(s3, "deleteFolder").mockResolvedValue(3);
+test("folder delete queues backend job without deleting in the browser", async () => {
+  const list = vi
+    .spyOn(s3, "listObjects")
+    .mockResolvedValue({ folders: ["backups/"], items: [], nextToken: "" });
+  const create = vi
+    .spyOn(jobs, "startDeletion")
+    .mockResolvedValue({
+      id: "a",
+      bucket: "bucket",
+      status: "pending",
+      deleted: 0,
+      cancelRequested: false,
+      createdAt: "",
+      updatedAt: "",
+    });
   const user = userEvent.setup();
   renderObjects();
-
   await user.click(
     await screen.findByRole("checkbox", { name: "Select folder backups/" }),
   );
   await user.click(screen.getByRole("button", { name: "Delete 1" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByText(/deleted recursively/)).toBeTruthy();
-  await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
-
-  await waitFor(() =>
-    expect(remove).toHaveBeenCalledWith(
-      "bucket",
-      "backups/",
-      expect.any(Function),
-    ),
+  await user.click(
+    within(await screen.findByRole("dialog")).getByRole("button", {
+      name: "Confirm",
+    }),
   );
-  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
-  expect(screen.queryByRole("button", { name: "Delete 1" })).toBeNull();
+  await waitFor(() =>
+    expect(create).toHaveBeenCalledWith("bucket", [], ["backups/"]),
+  );
+  expect(await screen.findByText(/Deletion queued/)).toBeTruthy();
+  expect(list).toHaveBeenCalled();
 });
 
-test("cancelling a folder delete leaves the folder untouched", async () => {
+test("cancelling confirmation never queues a deletion", async () => {
   vi.spyOn(s3, "listObjects").mockResolvedValue({
     folders: ["backups/"],
     items: [],
     nextToken: "",
   });
-  const remove = vi.spyOn(s3, "deleteFolder").mockResolvedValue(0);
+  const create = vi.spyOn(jobs, "startDeletion");
   const user = userEvent.setup();
   renderObjects();
-
   await user.click(
     await screen.findByRole("checkbox", { name: "Select folder backups/" }),
   );
@@ -78,8 +82,7 @@ test("cancelling a folder delete leaves the folder untouched", async () => {
   await user.click(
     within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
   );
-  expect(remove).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "Delete 1" })).toBeTruthy();
+  expect(create).not.toHaveBeenCalled();
 });
 
 test("read-only browsing never offers folder deletion", async () => {
@@ -93,17 +96,16 @@ test("read-only browsing never offers folder deletion", async () => {
   expect(
     screen.queryByRole("checkbox", { name: "Select folder backups/" }),
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
 });
 
-test("partial folder-deletion failures stay visible after the list refreshes", async () => {
+test("failed scheduling presents the error without deleting objects", async () => {
   vi.spyOn(s3, "listObjects").mockResolvedValue({
     folders: ["backups/"],
     items: [],
     nextToken: "",
   });
-  vi.spyOn(s3, "deleteFolder").mockRejectedValue(
-    new Error("Garage refused delete (403)"),
+  vi.spyOn(jobs, "startDeletion").mockRejectedValue(
+    new Error("cannot queue deletion"),
   );
   const user = userEvent.setup();
   renderObjects();
@@ -115,12 +117,6 @@ test("partial folder-deletion failures stay visible after the list refreshes", a
     within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm" }),
   );
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "Garage refused delete (403)",
-  );
-  await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "Delete 1" })).toBeNull(),
-  );
-  expect(screen.getByRole("alert").textContent).toContain(
-    "Garage refused delete (403)",
+    "cannot queue deletion",
   );
 });
