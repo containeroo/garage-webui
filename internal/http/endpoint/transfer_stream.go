@@ -22,7 +22,8 @@ const (
 
 // objectStream is a regular handler responsible only for transport and response streaming.
 type objectStream struct {
-	proxy *httputil.ReverseProxy
+	proxy  *httputil.ReverseProxy
+	logger *slog.Logger
 }
 
 // newObjectStream binds one trusted transfer plan to the shared upstream transport.
@@ -37,14 +38,17 @@ func newObjectStream(plan transferPlan, transport http.RoundTripper, logger *slo
 		ErrorHandler:   streamErrorHandler(logger, plan.input),
 	}
 
-	return &objectStream{proxy: proxy}
+	return &objectStream{
+		proxy:  proxy,
+		logger: logger,
+	}
 }
 
 func (h *objectStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// File transfers may outlive the API server's short response-write deadline.
 	err := http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	if err != nil && !errors.Is(err, http.ErrNotSupported) {
-		httpresponse.InternalServerError(logger, w, err)
+		httpresponse.InternalServerError(h.logger, w, err)
 		return
 	}
 
