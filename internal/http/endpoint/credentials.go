@@ -20,6 +20,7 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 		// GlobalAliases lists globally usable bucket names.
 		GlobalAliases []string `json:"globalAliases"`
 	}
+
 	// bucketInfoResponse describes bucket metadata without exposing access key details.
 	type bucketInfoResponse struct {
 		// ID identifies the bucket.
@@ -29,16 +30,43 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 		// Keys is an empty list that avoids exposing access key details.
 		Keys []any `json:"keys"`
 	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := middleware.RequestIdentity(r)
-		if !ok || id.Credential.Kind != credential.S3 {
+		if !ok {
+			httpresponse.Problem(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		if id.Credential.Kind != credential.S3 {
 			httpresponse.Problem(w, http.StatusForbidden, "s3 credentials required")
 			return
 		}
-		op := admin.Operation(r.PathValue("operation"))
-		if r.Method != http.MethodGet || (op != admin.OpListBuckets && op != admin.OpGetBucketInfo) {
-			httpresponse.Problem(w, http.StatusForbidden, "s3 credentials cannot access administration")
+
+		op, ok := admin.ParseOperation(r.PathValue("operation"))
+		if !ok {
+			httpresponse.Problem(w, http.StatusNotFound, "operation not found")
 			return
+		}
+
+		if op != admin.OpListBuckets && op != admin.OpGetBucketInfo {
+			httpresponse.Problem(w, http.StatusForbidden, "operation is not available with s3 credentials")
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			httpresponse.Problem(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		name := ""
+		if op == admin.OpGetBucketInfo {
+			name = r.URL.Query().Get("id")
+			if name == "" {
+				httpresponse.Problem(w, http.StatusBadRequest, "bucket id is required")
+				return
+			}
 		}
 
 		names, err := authentication.Buckets(r.Context(), id.Credential)
@@ -48,9 +76,8 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 		}
 
 		if op == admin.OpGetBucketInfo {
-			name := r.URL.Query().Get("id")
 			if !slices.Contains(names, name) {
-				httpresponse.Problem(w, http.StatusForbidden, "bucket not accessible")
+				httpresponse.Problem(w, http.StatusForbidden, "bucket is not accessible")
 				return
 			}
 
@@ -59,11 +86,10 @@ func S3BucketRequest(authentication *auth.Service) http.HandlerFunc {
 				GlobalAliases: []string{name},
 				Keys:          []any{},
 			})
-
 			return
 		}
 
-		result := []bucketSummaryResponse{}
+		result := make([]bucketSummaryResponse, 0, len(names))
 		for _, name := range names {
 			result = append(result, bucketSummaryResponse{
 				ID:            name,

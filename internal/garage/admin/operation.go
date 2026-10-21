@@ -41,15 +41,36 @@ const (
 // Method returns the fixed HTTP method for a permitted Garage operation.
 func (op Operation) Method() (string, bool) {
 	switch op {
-	case OpConnectClusterNodes, OpUpdateClusterLayout, OpPreviewClusterLayoutChanges,
-		OpApplyClusterLayout, OpRevertClusterLayout, OpCreateAdminToken,
-		OpUpdateAdminToken, OpDeleteAdminToken, OpCreateBucket, OpDeleteBucket,
-		OpCreateKey, OpDeleteKey, OpUpdateKey, OpAllowBucketKey, OpDenyBucketKey,
-		OpUpdateBucket, OpAddBucketAlias, OpRemoveBucketAlias:
+	case OpConnectClusterNodes,
+		OpUpdateClusterLayout,
+		OpPreviewClusterLayoutChanges,
+		OpApplyClusterLayout,
+		OpRevertClusterLayout,
+		OpCreateAdminToken,
+		OpUpdateAdminToken,
+		OpDeleteAdminToken,
+		OpCreateBucket,
+		OpDeleteBucket,
+		OpCreateKey,
+		OpDeleteKey,
+		OpUpdateKey,
+		OpAllowBucketKey,
+		OpDenyBucketKey,
+		OpUpdateBucket,
+		OpAddBucketAlias,
+		OpRemoveBucketAlias:
 		return http.MethodPost, true
-	case OpGetClusterHealth, OpGetClusterStatus, OpGetClusterLayout,
-		OpGetClusterStatistics, OpGetCurrentAdminTokenInfo, OpListAdminTokens,
-		OpGetAdminTokenInfo, OpListBuckets, OpGetBucketInfo, OpListKeys, OpGetKeyInfo:
+	case OpGetClusterHealth,
+		OpGetClusterStatus,
+		OpGetClusterLayout,
+		OpGetClusterStatistics,
+		OpGetCurrentAdminTokenInfo,
+		OpListAdminTokens,
+		OpGetAdminTokenInfo,
+		OpListBuckets,
+		OpGetBucketInfo,
+		OpListKeys,
+		OpGetKeyInfo:
 		return http.MethodGet, true
 	default:
 		return "", false

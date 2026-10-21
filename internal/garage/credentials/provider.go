@@ -80,7 +80,11 @@ func (m *Provider) Read(ctx context.Context, bucketID string) (signing.Credentia
 // bucketCredential coordinates Garage provisioning while holding the bucket lock.
 // The generated key ID is saved immediately, so failed permission/CORS updates
 // can be retried without losing track of a newly created Garage key.
-func (m *Provider) bucketCredential(ctx context.Context, bucketID string, purpose signing.Purpose) (key signing.Credential, err error) {
+func (m *Provider) bucketCredential(
+	ctx context.Context,
+	bucketID string,
+	purpose signing.Purpose,
+) (key signing.Credential, err error) {
 	if cached, ok := m.cached(bucketID, string(purpose)); ok {
 		return cached, nil
 	}
@@ -148,7 +152,10 @@ func (m *Provider) enforcePurpose(ctx context.Context, bucketID, keyID string, p
 }
 
 // CredentialForPurpose creates or loads a purpose-limited S3 credential.
-func (m *Provider) managedKeyForPurpose(ctx context.Context, keyID, bucketID, purpose string) (signing.Credential, error) {
+func (m *Provider) managedKeyForPurpose(
+	ctx context.Context,
+	keyID, bucketID, purpose string,
+) (signing.Credential, error) {
 	if keyID != "" {
 		key, err := m.admin.GetKey(ctx, keyID, true)
 		if err != nil && !errors.Is(err, admin.ErrNotFound) {

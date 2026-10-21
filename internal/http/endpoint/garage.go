@@ -20,25 +20,24 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 	s3Buckets := S3BucketRequest(authentication)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := middleware.RequestIdentity(r)
-		op := r.PathValue("operation")
 		if id.Credential.Kind == credential.S3 {
 			s3Buckets.ServeHTTP(w, r)
 			return
 		}
 
-		operation, exists := admin.ParseOperation(op)
-		if !exists {
-			httpresponse.Problem(w, http.StatusNotFound, "not found")
+		op, ok := admin.ParseOperation(r.PathValue("operation"))
+		if !ok {
+			httpresponse.Problem(w, http.StatusNotFound, "operation not found")
 			return
 		}
 
-		method, _ := operation.Method()
+		method, _ := op.Method()
 		if method != r.Method {
 			httpresponse.Problem(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
-		if !id.Allows(operation) {
+		if !id.Allows(op) {
 			httpresponse.Problem(w, http.StatusForbidden, "token does not allow this operation")
 			return
 		}
@@ -62,7 +61,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 			}
 		}
 
-		if op == "DeleteBucket" {
+		if op == admin.OpDeleteBucket {
 			status, result, err := objectServices.DeleteBucket(r.Context(), id, query.Get("id"))
 			if err != nil {
 				if errors.Is(err, objects.ErrForbidden) {
@@ -94,7 +93,7 @@ func GarageRequest(authentication *auth.Service, objectServices ObjectServices, 
 		}
 
 		query.Del("showSecretKey")
-		status, data, err := client.Proxy(r.Context(), operation, query, body)
+		status, data, err := client.Proxy(r.Context(), op, query, body)
 		if err != nil {
 			logger.Error("garage request failed", "operation", op, "error", err)
 

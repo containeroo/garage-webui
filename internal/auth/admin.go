@@ -29,7 +29,12 @@ func (s *Service) Admin(ctx context.Context, token string) (Identity, error) {
 		return Identity{}, ErrUnauthenticated
 	}
 
-	return Identity{Credential: Credential{Kind: credential.Admin, Token: token}, User: info.Name, Scope: info.Scope}, nil
+	return Identity{
+		Credential: Credential{
+			Kind:  credential.Admin,
+			Token: token,
+		}, User: info.Name, Scope: info.Scope,
+	}, nil
 }
 
 // AdminClient constructs a client using the session's Garage token.
