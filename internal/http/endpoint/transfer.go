@@ -1,4 +1,4 @@
-package server
+package endpoint
 
 import (
 	"fmt"
@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/containeroo/garage-webui/internal/application/objects"
-	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/http/middleware"
 	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
@@ -40,7 +39,11 @@ func TransferObject(services ObjectServices, logger *slog.Logger, options Transf
 	transport.ResponseHeaderTimeout = options.ResponseHeaderTimeout
 	transport.DisableCompression = true
 
-	return &objectTransfer{services: services, transport: transport, logger: logger}
+	return &objectTransfer{
+		services:  services,
+		transport: transport,
+		logger:    logger,
+	}
 }
 
 func (h *objectTransfer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,17 +90,4 @@ func (h *objectTransfer) prepare(r *http.Request, input transferRequest) (transf
 	}
 
 	return transferPlan{input: input, result: result, target: target}, nil
-}
-
-// transferOrigin protects non-JSON streamed writes with the same strict origin policy.
-func transferOrigin(publicURL string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet && !auth.SameOrigin(r, publicURL) {
-				httpresponse.Error(w, "invalid transfer origin", http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }

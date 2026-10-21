@@ -19,6 +19,7 @@ import (
 	"github.com/containeroo/garage-webui/internal/assembly"
 	"github.com/containeroo/garage-webui/internal/garage/admin"
 	"github.com/containeroo/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/endpoint"
 	"github.com/containeroo/garage-webui/internal/postgres"
 	"github.com/containeroo/garage-webui/internal/sqlite"
 	"github.com/containeroo/garage-webui/internal/storage"
@@ -114,7 +115,7 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	defer s3server.Close()
 	authentication, err := auth.New(store, auth.Config{PublicURL: "http://console.example", GarageURL: upstream.URL, S3URL: s3server.URL, S3PublicURL: "https://browser-s3.example", Region: "garage", SessionSecret: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))})
 	require.NoError(t, err)
-	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil, TransferOptions{ResponseHeaderTimeout: time.Second}).Handler()
+	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil, endpoint.TransferOptions{ResponseHeaderTimeout: time.Second}).Handler()
 	call := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:9000"

@@ -1,4 +1,4 @@
-package server
+package endpoint
 
 import (
 	"encoding/json"

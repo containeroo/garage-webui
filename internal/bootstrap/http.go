@@ -8,6 +8,7 @@ import (
 	"github.com/containeroo/garage-webui/internal/assembly"
 	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/garage-webui/internal/http/auth"
+	"github.com/containeroo/garage-webui/internal/http/endpoint"
 	"github.com/containeroo/garage-webui/internal/http/server"
 	"github.com/containeroo/garage-webui/internal/s3"
 	"github.com/containeroo/garage-webui/internal/storage"
@@ -58,7 +59,7 @@ func newServer(
 		logger,
 		cfg.Logging.AccessLog,
 		assets, availableThemes,
-		server.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
+		endpoint.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
 	), nil
 }
 
