@@ -1,3 +1,4 @@
+import { fetchS3 } from "../s3-request";
 import { ObjectAction, PreviewKind } from "../domain";
 import { useQuestions } from "./ui/questions";
 import { errorMessage } from "../api";
@@ -243,7 +244,7 @@ export function BucketObjects({
         throw new Error(
           "text preview is limited to 1 MiB. Download the file instead.",
         );
-      const response = await fetch(signed.url, {
+      const response = await fetchS3(signed.url, {
         credentials: "omit",
         signal: controller.signal,
       });

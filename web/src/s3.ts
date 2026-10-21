@@ -1,3 +1,4 @@
+import { fetchS3, s3AccessError } from "./s3-request";
 import { ObjectAction } from "./domain";
 import { request } from "./api";
 import { abortMultipart } from "./multipart";
@@ -139,7 +140,7 @@ export async function listObjects(
     { prefix, continuationToken },
     signal,
   );
-  const response = await fetch(signed.url, { credentials: "omit", signal });
+  const response = await fetchS3(signed.url, { credentials: "omit", signal });
   if (!response.ok)
     throw new Error(`garage could not list objects (HTTP ${response.status})`);
   return parseListPage(await response.text());
@@ -179,7 +180,7 @@ function transfer(
     };
     xhr.onerror = () => {
       finish();
-      reject(new Error("cannot reach the Garage S3 endpoint"));
+      reject(s3AccessError(signed.url));
     };
     xhr.onabort = () => {
       finish();
@@ -230,7 +231,7 @@ export async function uploadObject(
     { key },
     signal,
   );
-  const created = await fetch(begin.url, {
+  const created = await fetchS3(begin.url, {
     method: begin.method,
     credentials: "omit",
     signal,
@@ -280,7 +281,7 @@ export async function uploadObject(
       { key, uploadId },
       signal,
     );
-    const response = await fetch(signed.url, {
+    const response = await fetchS3(signed.url, {
       method: "POST",
       body: xml,
       credentials: "omit",
@@ -304,7 +305,7 @@ export async function uploadObject(
         },
         cleanupSignal,
       );
-      return fetch(abort.url, {
+      return fetchS3(abort.url, {
         method: "DELETE",
         credentials: "omit",
         signal: cleanupSignal,
@@ -329,7 +330,7 @@ export async function deleteObject(
   key: string,
 ): Promise<void> {
   const signed = await signOperation(bucketId, ObjectAction.Delete, { key });
-  const response = await fetch(signed.url, {
+  const response = await fetchS3(signed.url, {
     method: "DELETE",
     credentials: "omit",
   });
@@ -353,7 +354,7 @@ export async function copyObject(
       sourceKey,
       key,
     });
-    const response = await fetch(signed.url, {
+    const response = await fetchS3(signed.url, {
       method: "PUT",
       credentials: "omit",
       headers: { "x-amz-copy-source": signed.copySource || "" },
@@ -381,7 +382,7 @@ async function copyMultipart(
     ObjectAction.MultipartCopyStart,
     input,
   );
-  const created = await fetch(begin.url, {
+  const created = await fetchS3(begin.url, {
     method: "POST",
     credentials: "omit",
   });
@@ -412,7 +413,7 @@ async function copyMultipart(
           rangeEnd: Math.min(size, start + chunk) - 1,
         },
       );
-      const response = await fetch(signed.url, {
+      const response = await fetchS3(signed.url, {
         method: "PUT",
         credentials: "omit",
         headers: signed.copyHeaders || {},
@@ -435,7 +436,7 @@ async function copyMultipart(
         uploadId,
       },
     );
-    const response = await fetch(finish.url, {
+    const response = await fetchS3(finish.url, {
       method: "POST",
       body,
       credentials: "omit",
@@ -455,7 +456,7 @@ async function copyMultipart(
         },
         cleanupSignal,
       );
-      return fetch(abort.url, {
+      return fetchS3(abort.url, {
         method: "DELETE",
         credentials: "omit",
         signal: cleanupSignal,
