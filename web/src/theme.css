@@ -966,7 +966,8 @@ input[type="checkbox"] {
   font-size: 13px;
   font-weight: 600;
 }
-.bucket-tabs button.active {
+.bucket-tabs button.active,
+.bucket-tabs button[aria-selected="true"] {
   color: var(--theme-text, #18181b);
   background: var(--theme-surface, #fff);
   box-shadow: 0 1px 3px #0002;
