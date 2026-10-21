@@ -48,7 +48,7 @@ Login rate limits are persisted in the configured database (shared across replic
 
 ## Persistent recursive deletion
 
-Deleting a selected folder creates a persistent job in the configured database. The Web UI returns immediately while the backend deletes objects and nested folders, including zero-byte folder markers. The **Background operations** panel reloads job state after browser restarts and uses server-sent events to display updates from all replicas. Other sessions using the **same Garage credential** can view and cancel that job; unrelated credentials cannot access it.
+Deleting a selected folder creates a persistent job in the configured database. The Web UI returns immediately while the backend deletes objects and nested folders, including zero-byte folder markers. Use **Refresh status** in the **Background operations** panel to load current job state after browser restarts or from another replica. Other sessions using the **same Garage credential** can view and cancel that job; unrelated credentials cannot access it.
 
 The job stores the initiating Garage credential encrypted using `--session-secret`, independently of the eight-hour browser session. Logging out or closing the tab does not cancel an explicitly started deletion. The worker revalidates the Garage credential for its operations; revocation or Garage credential expiry stops the job. On normal completion, failure, or cancellation, the stored credential is erased. Completed job metadata is retained for seven days.
 

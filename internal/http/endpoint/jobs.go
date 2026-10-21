@@ -5,10 +5,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/containeroo/garage-webui/internal/application/jobs"
-	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/http/middleware"
 	httpresponse "github.com/containeroo/garage-webui/internal/http/response"
 )
@@ -85,56 +83,5 @@ func CancelDeletionJob(service *jobs.Service) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-// StreamDeletionJobs periodically rechecks browser authentication and streams each credential's current job state.
-func StreamDeletionJobs(service *jobs.Service, authentication *auth.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Disable the HTTP server's short default WriteTimeout for a long-lived event stream.
-		if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
-			httpresponse.Problem(w, http.StatusServiceUnavailable, "background progress stream unavailable")
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache, no-store")
-		w.Header().Set("X-Accel-Buffering", "no")
-		var previous string
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			// Never keep an SSE connection authenticated after its browser session expires.
-			id, err := authentication.Authenticate(r)
-			if err != nil {
-				return
-			}
-			current, err := service.List(r.Context(), id)
-			if err != nil {
-				return
-			}
-			encoded, err := json.Marshal(current)
-			if err != nil {
-				return
-			}
-			data := string(encoded)
-			if data != previous {
-				if _, err = w.Write(append([]byte("event: jobs\ndata: "), append(encoded, []byte("\n\n")...)...)); err != nil {
-					return
-				}
-				previous = data
-			} else {
-				if _, err := w.Write([]byte(": heartbeat\n\n")); err != nil {
-					return
-				}
-			}
-			if err := http.NewResponseController(w).Flush(); err != nil {
-				return
-			}
-			select {
-			case <-r.Context().Done():
-				return
-			case <-ticker.C:
-			}
-		}
 	}
 }

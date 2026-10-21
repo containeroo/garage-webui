@@ -134,19 +134,23 @@ func (s *Store) RenewDeletionJob(ctx context.Context, id, worker string, lease t
 	return cancelled, err == nil, err
 }
 
-// RecordDeletionProgress increments progress only for the lease owner.
-func (s *Store) RecordDeletionProgress(ctx context.Context, id, worker string) error {
+// RecordDeletionProgress increments batched progress only for the lease owner.
+func (s *Store) RecordDeletionProgress(ctx context.Context, id, worker string, deleted int64) error {
+	if deleted <= 0 {
+		return nil
+	}
+
 	now := time.Now().UnixMilli()
 	tag, err := s.db.ExecContext(ctx, `
 		UPDATE webui_deletion_jobs
 		SET
-			deleted = deleted + 1,
+			deleted = deleted + ?,
 			updated_at = ?
 		WHERE id = ?
 			AND worker = ?
 			AND status = 'running'
 			AND lease_until > ?
-	`, now, id, worker, now)
+	`, deleted, now, id, worker, now)
 	if err != nil {
 		return err
 	}

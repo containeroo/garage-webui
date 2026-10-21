@@ -37,17 +37,15 @@ test("folder delete queues backend job without deleting in the browser", async (
   const list = vi
     .spyOn(s3, "listObjects")
     .mockResolvedValue({ folders: ["backups/"], items: [], nextToken: "" });
-  const create = vi
-    .spyOn(jobs, "startDeletion")
-    .mockResolvedValue({
-      id: "a",
-      bucket: "bucket",
-      status: "pending",
-      deleted: 0,
-      cancelRequested: false,
-      createdAt: "",
-      updatedAt: "",
-    });
+  const create = vi.spyOn(jobs, "startDeletion").mockResolvedValue({
+    id: "a",
+    bucket: "bucket",
+    status: "pending",
+    deleted: 0,
+    cancelRequested: false,
+    createdAt: "",
+    updatedAt: "",
+  });
   const user = userEvent.setup();
   renderObjects();
   await user.click(

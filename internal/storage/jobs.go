@@ -45,8 +45,8 @@ type DeletionJobs interface {
 	ClaimDeletionJob(context.Context, string, time.Duration) (DeletionJob, bool, error)
 	// RenewDeletionJob extends the lease and reports whether cancellation was requested.
 	RenewDeletionJob(context.Context, string, string, time.Duration) (cancelled bool, owned bool, err error)
-	// RecordDeletionProgress records one successful object deletion while a worker owns the lease.
-	RecordDeletionProgress(context.Context, string, string) error
+	// RecordDeletionProgress records a batch of successful object deletions while a worker owns the lease.
+	RecordDeletionProgress(context.Context, string, string, int64) error
 	// FinishDeletionJob records a terminal status and erases its stored credential.
 	FinishDeletionJob(context.Context, string, string, string, string) error
 	// CancelDeletionJob stops an unstarted job or requests cancellation of a running job.

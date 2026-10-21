@@ -107,11 +107,6 @@ func (s *Server) Handler() http.Handler {
 			endpoint.ListDeletionJobs(s.jobs),
 			policies.Authenticate,
 		))
-	mux.Handle(http.MethodGet+" /api/jobs/events",
-		httpkitmiddleware.Chain(
-			endpoint.StreamDeletionJobs(s.jobs, s.auth),
-			policies.Authenticate,
-		))
 	mux.Handle(http.MethodPost+" /api/jobs/{id}/cancel",
 		httpkitmiddleware.Chain(
 			endpoint.CancelDeletionJob(s.jobs),

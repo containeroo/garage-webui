@@ -150,12 +150,6 @@ function Workspace({
 
   useEffect(() => () => bucketRequest.current?.abort(), []);
 
-  // handleJobCompleted refreshes listings when a background deletion completes.
-  const handleJobCompleted = useCallback(
-    () => setObjectsVersion((value) => value + 1),
-    [],
-  );
-
   // closeBucket cancels pending detail loads before returning to workspace navigation.
   function closeBucket() {
     bucketRequest.current?.abort();
@@ -294,7 +288,7 @@ function Workspace({
           </button>
         </header>
         <div className="content">
-          <BackgroundJobs onCompleted={handleJobCompleted} />
+          <BackgroundJobs />
           {!details && (
             <div className="page-heading">
               <div>

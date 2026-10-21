@@ -29,6 +29,8 @@ const (
 	leaseLength = time.Minute
 	// jobRetention retains terminal job metadata for a week.
 	jobRetention = 7 * 24 * time.Hour
+	// progressBatchSize limits database writes during large recursive deletions.
+	progressBatchSize int64 = 100
 )
 
 // Selection contains the confirmed files and folder prefixes to delete.
@@ -278,12 +280,13 @@ func (s *Service) execute(parent context.Context, job storage.DeletionJob) {
 		}
 	}()
 
+	executor := &execution{service: s}
 	var err error
 	if job.CancelRequested {
 		cancelRequested.Store(true)
 		err = context.Canceled
 	} else {
-		err = s.process(ctx, job)
+		err = s.process(ctx, job, executor)
 	}
 	cancel()
 	<-heartbeatDone
@@ -291,6 +294,15 @@ func (s *Service) execute(parent context.Context, job storage.DeletionJob) {
 	if parent.Err() != nil || leaseLost.Load() {
 		return
 	} // Let another worker reclaim after shutdown.
+
+	flushCtx, flushDone := context.WithTimeout(parent, 10*time.Second)
+	if flushErr := executor.flushProgress(flushCtx, job); flushErr != nil {
+		s.logger.Warn("record deletion progress", "job", job.ID, "error", flushErr)
+		if err == nil {
+			err = flushErr
+		}
+	}
+	flushDone()
 
 	status, message := "completed", ""
 	if err != nil {
@@ -312,7 +324,7 @@ func (s *Service) execute(parent context.Context, job storage.DeletionJob) {
 }
 
 // process iterates exact objects and folder prefixes, rescanning pages until all nested keys are gone.
-func (s *Service) process(ctx context.Context, job storage.DeletionJob) error {
+func (s *Service) process(ctx context.Context, job storage.DeletionJob, executor *execution) error {
 	credential, err := s.authentication.DecryptJobCredential(job.ID, job.EncryptedCredential)
 	if err != nil {
 		return err
@@ -326,7 +338,7 @@ func (s *Service) process(ctx context.Context, job storage.DeletionJob) error {
 		return err
 	}
 
-	executor := &execution{service: s, credential: credential}
+	executor.credential = credential
 	// Deleting a parent covers selected descendants; prefer one uniform recursive pass.
 	for _, folder := range sel.Folders {
 		if err := executor.deleteFolder(ctx, job, folder); err != nil {
@@ -363,6 +375,20 @@ type execution struct {
 	signer *objects.Service
 	// recheck is the deadline for validating Garage authorization again.
 	recheck time.Time
+	// pendingProgress tracks successful deletions not yet persisted to the job row.
+	pendingProgress int64
+}
+
+// flushProgress persists accumulated successful deletions in one database update.
+func (e *execution) flushProgress(ctx context.Context, job storage.DeletionJob) error {
+	if e.pendingProgress == 0 {
+		return nil
+	}
+	if err := e.service.store.RecordDeletionProgress(ctx, job.ID, e.service.worker, e.pendingProgress); err != nil {
+		return err
+	}
+	e.pendingProgress = 0
+	return nil
 }
 
 // signedRequest periodically revalidates Garage authorization and performs one scoped S3 operation.
@@ -471,7 +497,7 @@ func (e *execution) deleteFolder(ctx context.Context, job storage.DeletionJob, f
 	return nil
 }
 
-// deleteKey signs and performs an S3 deletion before recording one persisted progress increment.
+// deleteKey signs and performs an S3 deletion before batching its persisted progress increment.
 func (e *execution) deleteKey(ctx context.Context, job storage.DeletionJob, key string) error {
 	response, err := e.signedRequest(ctx, job.Bucket, objects.Request{BucketID: job.Bucket, Action: objectaction.Delete, Key: key})
 	if err != nil {
@@ -481,5 +507,9 @@ func (e *execution) deleteKey(ctx context.Context, job storage.DeletionJob, key 
 	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusOK {
 		return fmt.Errorf("garage delete returned HTTP %d", response.StatusCode)
 	}
-	return e.service.store.RecordDeletionProgress(ctx, job.ID, e.service.worker)
+	e.pendingProgress++
+	if e.pendingProgress < progressBatchSize {
+		return nil
+	}
+	return e.flushProgress(ctx, job)
 }
