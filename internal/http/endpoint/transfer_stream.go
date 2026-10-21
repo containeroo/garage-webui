@@ -22,7 +22,9 @@ const (
 
 // objectStream is a regular handler responsible only for transport and response streaming.
 type objectStream struct {
-	proxy  *httputil.ReverseProxy
+	// proxy forwards the authorized object transfer to Garage.
+	proxy *httputil.ReverseProxy
+	// logger records internal streaming failures without exposing details to clients.
 	logger *slog.Logger
 }
 
@@ -44,6 +46,7 @@ func newObjectStream(plan transferPlan, transport http.RoundTripper, logger *slo
 	}
 }
 
+// ServeHTTP streams an authorized object request to the prepared Garage endpoint.
 func (h *objectStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// File transfers may outlive the API server's short response-write deadline.
 	err := http.NewResponseController(w).SetWriteDeadline(time.Time{})
