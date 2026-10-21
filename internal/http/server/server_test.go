@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,12 +94,27 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 			w.WriteHeader(403)
 			return
 		}
+		assert.Empty(t, r.Header.Get("Cookie"), "browser session cookie leaked upstream")
+		if r.URL.Path == "/allowed/file.txt" {
+			if r.Method == http.MethodPut {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("ETag", "test-etag")
+			w.Header().Set("Content-Type", "text/plain")
+			if r.Header.Get("Range") == "bytes=0-3" {
+				w.Header().Set("Content-Range", "bytes 0-3/8")
+				w.WriteHeader(http.StatusPartialContent)
+			}
+			_, _ = w.Write([]byte("data"))
+			return
+		}
 		w.Write([]byte(`<ListAllMyBucketsResult><Buckets><Bucket><Name>allowed</Name></Bucket></Buckets></ListAllMyBucketsResult>`)) // nolint:errcheck
 	}))
 	defer s3server.Close()
 	authentication, err := auth.New(store, auth.Config{PublicURL: "http://console.example", GarageURL: upstream.URL, S3URL: s3server.URL, S3PublicURL: "https://browser-s3.example", Region: "garage", SessionSecret: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))})
 	require.NoError(t, err)
-	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil).Handler()
+	handler := New(authentication, assembly.New(authentication, store, "http://console.example"), store, "https://browser-s3.example", "http://console.example", "", slog.Default(), false, web.Assets, nil, TransferOptions{ResponseHeaderTimeout: time.Second}).Handler()
 	call := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:9000"
@@ -169,6 +185,33 @@ func testGarageCredentialFlow(t *testing.T, store storage.Store) {
 	assert.Contains(t, signed.Body.String(), "https://browser-s3.example/")
 	assert.NotContains(t, signed.Body.String(), s3server.URL)
 	assert.NotContains(t, signed.Body.String(), "s3-secret")
+	transferURL := func(input string) string { return "/api/objects/transfer?" + url.Values{"request": {input}}.Encode() }
+	listing := call("GET", transferURL(`{"bucketId":"allowed","action":"list"}`), "", cookie)
+	assert.Equal(t, 200, listing.Code)
+	assert.Contains(t, listing.Body.String(), "allowed")
+	assert.NotContains(t, listing.Body.String(), "X-Amz-Signature")
+	assert.Equal(t, 400, call("GET", transferURL(`{"bucketId":"other","action":"list"}`), "", cookie).Code)
+	assert.Equal(t, 400, call("GET", transferURL(`{"bucketId":"allowed","action":"delete","key":"file.txt"}`), "", cookie).Code)
+	assert.Equal(t, 401, call("GET", transferURL(`{"bucketId":"allowed","action":"list"}`), "", nil).Code)
+	assert.Equal(t, 403, call("PUT", transferURL(`{"bucketId":"allowed","action":"upload","key":"file.txt","size":4}`), "data", cookie).Code)
+	assert.Equal(t, 400, call("PUT", transferURL(`{"bucketId":"allowed","action":"upload","key":"file.txt","size":5}`), "data", cookie).Code)
+	request := httptest.NewRequest("GET", transferURL(`{"bucketId":"allowed","action":"download","key":"file.txt"}`), nil)
+	request.AddCookie(cookie)
+	request.Header.Set("Range", "bytes=0-3")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	require.Equal(t, 206, response.Code)
+	assert.Equal(t, "bytes 0-3/8", response.Header().Get("Content-Range"))
+	assert.Equal(t, "test-etag", response.Header().Get("ETag"))
+	assert.Contains(t, response.Header().Get("Content-Security-Policy"), "sandbox")
+	assert.Equal(t, "data", response.Body.String())
+	request = httptest.NewRequest("PUT", transferURL(`{"bucketId":"allowed","action":"upload","key":"file.txt","size":4}`), strings.NewReader("data"))
+	request.AddCookie(cookie)
+	request.Header.Set("Origin", "https://untrusted.example")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	assert.Equal(t, 403, response.Code)
+
 	t.Run("/api/users", func(t *testing.T) {
 		path := "/api/users"
 		r := call("GET", path, "", cookie)

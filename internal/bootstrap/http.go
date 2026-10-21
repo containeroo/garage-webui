@@ -58,6 +58,7 @@ func newServer(
 		logger,
 		cfg.Logging.AccessLog,
 		assets, availableThemes,
+		server.TransferOptions{ResponseHeaderTimeout: cfg.S3ResponseHeaderTimeout},
 	), nil
 }
 

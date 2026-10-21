@@ -2,6 +2,7 @@ package flags
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,4 +88,22 @@ func TestS3EndpointFallback(t *testing.T) {
 	cfg, err = Parse(nil, "test")
 	require.NoError(t, err)
 	assert.Empty(t, cfg.S3URL)
+}
+
+func TestS3ResponseHeaderTimeout(t *testing.T) {
+	t.Setenv("GARAGE_WEBUI__DATABASE_URL", "sqlite:///data/console.db")
+	t.Setenv("GARAGE_WEBUI__GARAGE_URL", "http://garage:3903")
+	t.Setenv("GARAGE_WEBUI__SESSION_SECRET", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	cfg, err := Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Equal(t, DefaultS3ResponseHeaderTimeout, cfg.S3ResponseHeaderTimeout)
+	t.Setenv("GARAGE_WEBUI__S3_RESPONSE_HEADER_TIMEOUT", "2m")
+	cfg, err = Parse(nil, "test")
+	require.NoError(t, err)
+	assert.Equal(t, 2*time.Minute, cfg.S3ResponseHeaderTimeout)
+	cfg, err = Parse([]string{"--s3-response-header-timeout=0"}, "test")
+	require.NoError(t, err)
+	assert.Zero(t, cfg.S3ResponseHeaderTimeout)
+	_, err = Parse([]string{"--s3-response-header-timeout=-1s"}, "test")
+	require.Error(t, err)
 }

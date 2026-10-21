@@ -10,6 +10,8 @@ export type Session = {
   scope: string[] | null;
   /** Whether the deployment exposes a browser-accessible S3 endpoint. */
   uploadsEnabled: boolean;
+  /** Whether optional public signed transfers are configured. */
+  directTransfersEnabled?: boolean;
 };
 /** allows checks the credential's Garage admin scopes for a requested operation. */
 export const allows = (session: Session, operation: AdminOperation) =>

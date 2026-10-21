@@ -60,7 +60,19 @@ type Signer interface {
 	// MultipartURL signs a multipart upload operation.
 	MultipartURL(context.Context, string, string, string, string, objectaction.Action, int, time.Time) (string, error)
 	// CopyMultipartURL signs a multipart copy operation and returns its required headers.
-	CopyMultipartURL(context.Context, string, string, string, string, string, objectaction.Action, int, int64, int64, time.Time) (signedURL string, requiredHeaders map[string]string, err error)
+	CopyMultipartURL(
+		context.Context,
+		string,
+		string,
+		string,
+		string,
+		string,
+		objectaction.Action,
+		int,
+		int64,
+		int64,
+		time.Time,
+	) (signedURL string, requiredHeaders map[string]string, err error)
 }
 
 // Request identifies an object operation and its parameters.
@@ -87,7 +99,7 @@ type Request struct {
 	RangeEnd int64
 }
 
-// Result describes a signed browser request.
+// Result describes a validated S3 request for backend execution or explicit direct transfers.
 type Result struct {
 	// URL is the signed request URL.
 	URL string
@@ -187,7 +199,10 @@ func (s *Service) sign(
 			input.PartNumber,
 			now,
 		)
-	case objectaction.MultipartCopyStart, objectaction.MultipartCopyPart, objectaction.MultipartCopyComplete, objectaction.MultipartCopyAbort:
+	case objectaction.MultipartCopyStart,
+		objectaction.MultipartCopyPart,
+		objectaction.MultipartCopyComplete,
+		objectaction.MultipartCopyAbort:
 		result.URL, result.CopyHeaders, err = signer.CopyMultipartURL(
 			ctx,
 			bucketID,

@@ -29,7 +29,7 @@ func PresignUpload(objectServices ObjectServices, logger *slog.Logger) http.Hand
 		id, _ := middleware.RequestIdentity(r)
 		kind := id.Credential.Kind
 
-		service, err := objectServices.ForIdentity(id)
+		service, err := objectServices.ForDirectIdentity(id)
 		if errors.Is(err, objects.ErrForbidden) {
 			httpresponse.Error(w, "token does not allow object provisioning", http.StatusForbidden)
 			return

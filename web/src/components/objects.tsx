@@ -26,7 +26,8 @@ import {
   copyObject,
   deleteObject,
   listObjects,
-  signOperation,
+  prepareOperation,
+  signDirectOperation,
   type ObjectItem,
   type ObjectPage,
 } from "../s3";
@@ -107,6 +108,7 @@ export function BucketObjects({
   refreshVersion,
   onFolderChange,
   onUpload,
+  directTransfersEnabled = false,
 }: {
   /** Identifier or accessible alias of the bucket being managed. */
   bucketId: string;
@@ -120,6 +122,8 @@ export function BucketObjects({
   onFolderChange?: (prefix: string) => void;
   /** Opens the file-upload dialog for the selected folder. */
   onUpload?: () => void;
+  /** Exposes optional signed downloads when a public S3 endpoint exists. */
+  directTransfersEnabled?: boolean;
 }) {
   const { confirm, prompt } = useQuestions();
   const [page, setPage] = useState<ObjectPage>(emptyPage);
@@ -209,12 +213,16 @@ export function BucketObjects({
   }
 
   /** download obtains an authorized URL and starts the browser download. */
-  async function download(key: string) {
+  async function download(key: string, direct = false) {
     setError("");
     try {
-      const signed = await signOperation(bucketId, ObjectAction.Download, {
-        key,
-      });
+      const signed = await (direct ? signDirectOperation : prepareOperation)(
+        bucketId,
+        ObjectAction.Download,
+        {
+          key,
+        },
+      );
       window.location.assign(signed.url);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -228,7 +236,7 @@ export function BucketObjects({
     previewRequest.current = controller;
     setError("");
     try {
-      const signed = await signOperation(
+      const signed = await prepareOperation(
         bucketId,
         ObjectAction.Preview,
         { key: item.key },
@@ -245,7 +253,7 @@ export function BucketObjects({
           "text preview is limited to 1 MiB. Download the file instead.",
         );
       const response = await fetchS3(signed.url, {
-        credentials: "omit",
+        credentials: "same-origin",
         signal: controller.signal,
       });
       if (!response.ok)
@@ -653,6 +661,7 @@ export function BucketObjects({
                     <Download size={15} />
                     Download
                   </button>
+
                   <button
                     className="secondary"
                     disabled={busy}
@@ -661,6 +670,16 @@ export function BucketObjects({
                     <Eye size={15} />
                     Preview
                   </button>
+                  {directTransfersEnabled && (
+                    <button
+                      className="secondary direct-transfer-action"
+                      disabled={busy}
+                      onClick={() => void download(activeItem.key, true)}
+                      title="Download from S3 using a short-lived signed URL"
+                    >
+                      <Download size={15} /> Download directly from S3
+                    </button>
+                  )}
                   {preview?.key === activeItem.key &&
                     preview.kind === PreviewKind.External && (
                       <a

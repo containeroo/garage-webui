@@ -32,7 +32,13 @@ type Provider struct {
 // New constructs a provider with a required cache shared across requests.
 // The cache isolates signing credentials by admin token, bucket and purpose.
 // A nil cache is a programming error because provisioning must never silently skip caching.
-func New(client *admin.Client, store signing.BucketLocker, origin string, cache *Cache, token string) *Provider {
+func New(
+	client *admin.Client,
+	store signing.BucketLocker,
+	origin string,
+	cache *Cache,
+	token string,
+) *Provider {
 	if cache == nil {
 		panic("credentials: signing cache is required")
 	}
@@ -115,8 +121,10 @@ func (m *Provider) bucketCredential(ctx context.Context, bucketID string, purpos
 		return signing.Credential{}, err
 	}
 
-	if err := m.ensureCORS(provisionCtx, bucketID); err != nil {
-		return signing.Credential{}, err
+	if m.origin != "" {
+		if err := m.ensureCORS(provisionCtx, bucketID); err != nil {
+			return signing.Credential{}, err
+		}
 	}
 
 	return key, nil

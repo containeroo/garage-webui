@@ -821,12 +821,15 @@ input::placeholder {
   align-self: flex-start;
 }
 
-/* Browser-to-S3 transfer status */
+/* Streamed file transfers */
 
 .upload-dialog {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.upload-dialog .modal-actions {
+  flex-wrap: wrap;
 }
 .upload-dialog label {
   display: flex;

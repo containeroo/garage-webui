@@ -25,8 +25,10 @@ type Factory struct {
 	store signing.BucketLocker
 	// deletion is used to delete buckets.
 	deletion *buckets.Service
-	// cache is used to cache credentials.
+	// cache isolates credentials whose browser CORS provisioning has succeeded.
 	cache *credentials.Cache
+	// transferCache holds credentials for backend operations without CORS changes.
+	transferCache *credentials.Cache
 	// publicURL is used to create signed URLs.
 	publicURL string
 }
@@ -38,29 +40,44 @@ func New(
 	publicURL string,
 ) *Factory {
 	return &Factory{
-		auth:      authentication,
-		store:     store,
-		deletion:  buckets.New(store),
-		publicURL: publicURL,
-		cache:     credentials.NewCache(),
+		auth:          authentication,
+		store:         store,
+		deletion:      buckets.New(store),
+		publicURL:     publicURL,
+		cache:         credentials.NewCache(),
+		transferCache: credentials.NewCache(),
 	}
 }
 
 // ForIdentity produces a service restricted to the current Garage credentials.
 func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
+	return f.forEndpoint(id, false)
+}
+
+// ForDirectIdentity prepares browser-direct transfers against the public endpoint.
+func (f *Factory) ForDirectIdentity(id auth.Identity) (*objects.Service, error) {
+	return f.forEndpoint(id, true)
+}
+
+func (f *Factory) forEndpoint(id auth.Identity, direct bool) (*objects.Service, error) {
+	endpoint, origin, cache := f.auth.S3URL, "", f.transferCache
+	if direct {
+		endpoint, origin, cache = f.auth.S3PublicURL, f.publicURL, f.cache
+	}
+
 	var provider s3.CredentialProvider
 	var buckets objects.BucketResolver
 
 	switch id.Credential.Kind {
 	case credential.Admin:
-		if !canProvisionObjects(id) {
+		if !canProvisionObjects(id, direct) {
 			return nil, objects.ErrForbidden
 		}
 		client, err := f.auth.AdminClient(id)
 		if err != nil {
 			return nil, err
 		}
-		provider = credentials.New(client, f.store, f.publicURL, f.cache, id.Credential.Token)
+		provider = credentials.New(client, f.store, origin, cache, id.Credential.Token)
 		buckets = client
 	case credential.S3:
 		provider = sessionKeys{
@@ -74,7 +91,7 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 		return nil, objects.ErrForbidden
 	}
 
-	manager, err := s3.NewManager(provider, f.auth.S3PublicURL, f.auth.Region, f.publicURL)
+	manager, err := s3.NewManager(provider, endpoint, f.auth.Region, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -88,14 +105,16 @@ func (f *Factory) ForIdentity(id auth.Identity) (*objects.Service, error) {
 
 // canProvisionObjects requires every privilege used by managed-key provisioning.
 // In particular, GetKeyInfo alone must never grant access to an existing signing key.
-func canProvisionObjects(id auth.Identity) bool {
+func canProvisionObjects(id auth.Identity, direct bool) bool {
+	if direct && !id.Allows(admin.OpUpdateBucket) {
+		return false
+	}
 	for _, operation := range []admin.Operation{
 		admin.OpGetBucketInfo,
 		admin.OpGetKeyInfo,
 		admin.OpCreateKey,
 		admin.OpAllowBucketKey,
 		admin.OpDenyBucketKey,
-		admin.OpUpdateBucket,
 	} {
 		if !id.Allows(operation) {
 			return false

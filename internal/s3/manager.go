@@ -22,11 +22,11 @@ type CredentialProvider interface {
 	Copy(context.Context, string) (signing.Credential, error)
 }
 
-// Manager signs browser-direct S3 requests using least-privilege bucket keys.
+// Manager signs validated S3 operations for server-side or optional direct transfers.
 type Manager struct {
 	// keys provides bucket-scoped signing credentials.
 	keys CredentialProvider
-	// public specifies the browser-accessible S3 endpoint.
+	// public specifies the selected S3 endpoint.
 	public string
 	// region specifies the S3 signing region.
 	region string

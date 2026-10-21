@@ -21,6 +21,8 @@ import (
 type ObjectServices interface {
 	// ForIdentity creates object services scoped to the authenticated identity.
 	ForIdentity(auth.Identity) (*objects.Service, error)
+	// ForDirectIdentity prepares optional public signed transfers.
+	ForDirectIdentity(auth.Identity) (*objects.Service, error)
 	// DeleteBucket deletes the requested bucket.
 	DeleteBucket(context.Context, auth.Identity, string) (int, []byte, error)
 }
@@ -47,6 +49,8 @@ type Server struct {
 	accessLog bool
 	// loginLimiter enforces the login attempt budget.
 	loginLimiter middleware.LoginLimiter
+	// transferOptions configures the internal S3 transport.
+	transferOptions TransferOptions
 }
 
 // New constructs the HTTP server.
@@ -60,18 +64,20 @@ func New(
 	accessLog bool,
 	assets fs.FS,
 	themeCatalog []themes.Theme,
+	transferOptions TransferOptions,
 ) *Server {
 	return &Server{
-		themes:       themeCatalog,
-		assets:       assets,
-		objects:      objectServices,
-		loginLimiter: loginLimiter,
-		s3Origin:     s3Origin,
-		auth:         authentication,
-		publicURL:    publicURL,
-		prefix:       prefix,
-		logger:       logger,
-		accessLog:    accessLog,
+		themes:          themeCatalog,
+		transferOptions: transferOptions,
+		assets:          assets,
+		objects:         objectServices,
+		loginLimiter:    loginLimiter,
+		s3Origin:        s3Origin,
+		auth:            authentication,
+		publicURL:       publicURL,
+		prefix:          prefix,
+		logger:          logger,
+		accessLog:       accessLog,
 	}
 }
 
@@ -122,6 +128,17 @@ func (s *Server) Handler() http.Handler {
 			policies.Authenticate,
 			policies.Mutation,
 		))
+
+	transfer := TransferObject(s.objects, s.logger, s.transferOptions)
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete} {
+		mux.Handle(method+" /api/objects/transfer",
+			httpkitmiddleware.Chain(
+				transfer,
+				policies.Authenticate,
+				transferOrigin(s.publicURL),
+			))
+	}
+
 	mux.Handle("POST /api/uploads/presign",
 		httpkitmiddleware.Chain(
 			PresignUpload(s.objects, s.logger),

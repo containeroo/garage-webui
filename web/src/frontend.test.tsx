@@ -232,8 +232,8 @@ test("cancels an object's preview when navigating away from its folder", async (
     items: [{ key: "photo.png", size: 8, modified: "" }],
     nextToken: "",
   });
-  let resolve!: (operation: s3.SignedOperation) => void;
-  const signing = vi.spyOn(s3, "signOperation").mockImplementation(
+  let resolve!: (operation: s3.PreparedOperation) => void;
+  const signing = vi.spyOn(s3, "prepareOperation").mockImplementation(
     () =>
       new Promise((done) => {
         resolve = done;

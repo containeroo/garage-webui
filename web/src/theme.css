@@ -1305,6 +1305,9 @@ input[type="checkbox"] {
   padding: 16px;
   border-top: 1px solid var(--theme-border, #e4e4e7);
 }
+.explorer-detail-actions .direct-transfer-action {
+  grid-column: 1 / -1;
+}
 .explorer-detail-actions .secondary {
   display: flex;
   justify-content: center;

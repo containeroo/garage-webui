@@ -3,18 +3,14 @@ import { ObjectAction } from "./domain";
 import { request } from "./api";
 import { abortMultipart } from "./multipart";
 
-/** A short-lived S3 request authorized for one object operation. */
-export type SignedOperation = {
-  /** Short-lived authorized URL for this browser operation. */
+/** A backend operation URL or an explicitly requested signed S3 transfer. */
+export type PreparedOperation = {
+  /** Destination for this operation, using the backend by default. */
   url: string;
   /** HTTP method that must be used with the signed URL. */
   method: "GET" | "POST" | "PUT" | "DELETE";
-  /** Signed URL validity duration in seconds. */
-  expiresIn: number;
-  /** Encoded source object for a server-side copy. */
-  copySource?: string;
-  /** Signed headers required for a multipart copy request. */
-  copyHeaders?: Record<string, string>;
+  /** Present only for an expiring direct S3 URL. */
+  expiresIn?: number;
 };
 /** An object's metadata from the current S3 listing page. */
 export type ObjectItem = {
@@ -70,18 +66,79 @@ const MAX_OBJECT = 5 * 1024 ** 4;
 const MAX_PARTS = 10000;
 const MIN_PART = 16 * 1024 ** 2;
 
-// signOperation delegates authentication and S3 signing to the Web UI backend.
-export function signOperation(
+// signDirectOperation obtains a signed URL only for explicitly selected direct transfers.
+export function signDirectOperation(
   bucketId: string,
   action: ObjectAction,
   input: OperationInput = {},
   signal?: AbortSignal,
-): Promise<SignedOperation> {
-  return request<SignedOperation>("api/objects/presign", {
+): Promise<PreparedOperation> {
+  return request<PreparedOperation>("api/objects/presign", {
     method: "POST",
     body: JSON.stringify({ bucketId, action, ...input }),
     signal,
   });
+}
+
+/** backendOperation addresses an authenticated, same-origin streamed operation. */
+function backendOperation(
+  input: Record<string, unknown>,
+  method: PreparedOperation["method"],
+): PreparedOperation {
+  const url = new URL("api/objects/transfer", document.baseURI);
+  url.searchParams.set("request", JSON.stringify(input));
+  return { url: url.href, method };
+}
+
+/** operationMethod maps application operations to their required HTTP methods. */
+function operationMethod(action: ObjectAction): PreparedOperation["method"] {
+  switch (action) {
+    case ObjectAction.List:
+    case ObjectAction.Download:
+    case ObjectAction.Preview:
+      return "GET";
+    case ObjectAction.Delete:
+    case ObjectAction.MultipartAbort:
+    case ObjectAction.MultipartCopyAbort:
+      return "DELETE";
+    case ObjectAction.Upload:
+    case ObjectAction.Copy:
+    case ObjectAction.MultipartPart:
+    case ObjectAction.MultipartCopyPart:
+      return "PUT";
+    default:
+      return "POST";
+  }
+}
+
+/** prepareOperation addresses an authenticated backend operation without signing it in the browser. */
+export async function prepareOperation(
+  bucketId: string,
+  action: ObjectAction,
+  input: OperationInput = {},
+  signal?: AbortSignal,
+): Promise<PreparedOperation> {
+  signal?.throwIfAborted();
+  return backendOperation(
+    { bucketId, action, ...input },
+    operationMethod(action),
+  );
+}
+
+/** prepareUpload selects the explicitly requested transfer path for a single file. */
+async function prepareUpload(
+  input: { bucketId: string; key: string; size: number },
+  mode: "server" | "direct",
+  signal: AbortSignal,
+): Promise<PreparedOperation> {
+  if (mode === "direct") {
+    return request<PreparedOperation>("api/uploads/presign", {
+      method: "POST",
+      body: JSON.stringify(input),
+      signal,
+    });
+  }
+  return backendOperation({ ...input, action: ObjectAction.Upload }, "PUT");
 }
 
 // nodeText looks up an XML field without relying on the Garage XML namespace.
@@ -127,20 +184,23 @@ export function parseListPage(xml: string): ObjectPage {
   return { items, folders, nextToken };
 }
 
-/** listObjects fetches one signed S3 folder page directly from the browser. */
+/** listObjects fetches a page of objects through the authenticated backend. */
 export async function listObjects(
   bucketId: string,
   prefix: string,
   continuationToken: string,
   signal?: AbortSignal,
 ): Promise<ObjectPage> {
-  const signed = await signOperation(
+  const signed = await prepareOperation(
     bucketId,
     ObjectAction.List,
     { prefix, continuationToken },
     signal,
   );
-  const response = await fetchS3(signed.url, { credentials: "omit", signal });
+  const response = await fetchS3(signed.url, {
+    credentials: "same-origin",
+    signal,
+  });
   if (!response.ok)
     throw new Error(`garage could not list objects (HTTP ${response.status})`);
   return parseListPage(await response.text());
@@ -148,7 +208,7 @@ export async function listObjects(
 
 // transfer is the shared browser-to-Garage request primitive for all file uploads.
 function transfer(
-  signed: SignedOperation,
+  signed: PreparedOperation,
   body: Blob,
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
@@ -207,15 +267,17 @@ export async function uploadObject(
   file: File,
   signal: AbortSignal,
   onProgress: (loaded: number) => void,
+  mode: "server" | "direct" = "server",
 ): Promise<void> {
   if (!file.size || file.size > MAX_OBJECT)
     throw new Error("file must be between 1 byte and 5 TiB");
+  const prepare = mode === "direct" ? signDirectOperation : prepareOperation;
   if (file.size <= PART_THRESHOLD) {
-    const signed = await request<SignedOperation>("api/uploads/presign", {
-      method: "POST",
-      body: JSON.stringify({ bucketId, key, size: file.size }),
+    const signed = await prepareUpload(
+      { bucketId, key, size: file.size },
+      mode,
       signal,
-    });
+    );
     await transfer(
       signed,
       file,
@@ -225,7 +287,7 @@ export async function uploadObject(
     );
     return;
   }
-  const begin = await signOperation(
+  const begin = await prepare(
     bucketId,
     ObjectAction.MultipartStart,
     { key },
@@ -233,7 +295,7 @@ export async function uploadObject(
   );
   const created = await fetchS3(begin.url, {
     method: begin.method,
-    credentials: "omit",
+    credentials: "same-origin",
     signal,
   });
   if (!created.ok)
@@ -259,7 +321,7 @@ export async function uploadObject(
       start += chunk, number++
     ) {
       const data = file.slice(start, Math.min(file.size, start + chunk));
-      const signed = await signOperation(
+      const signed = await prepare(
         bucketId,
         ObjectAction.MultipartPart,
         { key, uploadId, partNumber: number },
@@ -270,12 +332,14 @@ export async function uploadObject(
       );
       if (!etag)
         throw new Error(
-          "garage did not expose the multipart ETag; check bucket CORS",
+          mode === "direct"
+            ? "garage did not expose the multipart ETag; check bucket CORS"
+            : "garage did not return the multipart ETag",
         );
       parts.push({ number, etag });
     }
     const xml = completionXML(parts);
-    const signed = await signOperation(
+    const signed = await prepare(
       bucketId,
       ObjectAction.MultipartComplete,
       { key, uploadId },
@@ -284,7 +348,7 @@ export async function uploadObject(
     const response = await fetchS3(signed.url, {
       method: "POST",
       body: xml,
-      credentials: "omit",
+      credentials: "same-origin",
       signal,
     });
     if (!response.ok)
@@ -296,7 +360,7 @@ export async function uploadObject(
   } catch (error) {
     await abortMultipart(async () => {
       const cleanupSignal = AbortSignal.timeout(10000);
-      const abort = await signOperation(
+      const abort = await prepare(
         bucketId,
         ObjectAction.MultipartAbort,
         {
@@ -307,7 +371,7 @@ export async function uploadObject(
       );
       return fetchS3(abort.url, {
         method: "DELETE",
-        credentials: "omit",
+        credentials: "same-origin",
         signal: cleanupSignal,
       });
     }, error);
@@ -324,15 +388,15 @@ function escapeXML(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-/** deleteObject requests authorization and deletes one S3 object directly. */
+/** deleteObject deletes an authorized object through the backend. */
 export async function deleteObject(
   bucketId: string,
   key: string,
 ): Promise<void> {
-  const signed = await signOperation(bucketId, ObjectAction.Delete, { key });
+  const signed = await prepareOperation(bucketId, ObjectAction.Delete, { key });
   const response = await fetchS3(signed.url, {
     method: "DELETE",
-    credentials: "omit",
+    credentials: "same-origin",
   });
   if (!response.ok)
     throw new Error(
@@ -350,14 +414,13 @@ export async function copyObject(
   if (size < 0 || size > MAX_OBJECT)
     throw new Error("unsupported source object size");
   if (size <= 5 * 1024 ** 3) {
-    const signed = await signOperation(bucketId, ObjectAction.Copy, {
+    const signed = await prepareOperation(bucketId, ObjectAction.Copy, {
       sourceKey,
       key,
     });
     const response = await fetchS3(signed.url, {
       method: "PUT",
-      credentials: "omit",
-      headers: { "x-amz-copy-source": signed.copySource || "" },
+      credentials: "same-origin",
     });
     if (!response.ok)
       throw new Error(
@@ -377,14 +440,14 @@ async function copyMultipart(
   size: number,
 ): Promise<void> {
   const input = { sourceKey, key };
-  const begin = await signOperation(
+  const begin = await prepareOperation(
     bucketId,
     ObjectAction.MultipartCopyStart,
     input,
   );
   const created = await fetchS3(begin.url, {
     method: "POST",
-    credentials: "omit",
+    credentials: "same-origin",
   });
   if (!created.ok)
     throw new Error(`cannot initiate S3 copy (${created.status})`);
@@ -402,7 +465,7 @@ async function copyMultipart(
   const chunk = partSize(size);
   try {
     for (let start = 0, number = 1; start < size; start += chunk, number++) {
-      const signed = await signOperation(
+      const signed = await prepareOperation(
         bucketId,
         ObjectAction.MultipartCopyPart,
         {
@@ -415,8 +478,7 @@ async function copyMultipart(
       );
       const response = await fetchS3(signed.url, {
         method: "PUT",
-        credentials: "omit",
-        headers: signed.copyHeaders || {},
+        credentials: "same-origin",
       });
       if (!response.ok)
         throw new Error(`cannot copy part ${number} (${response.status})`);
@@ -428,7 +490,7 @@ async function copyMultipart(
       parts.push({ number, etag });
     }
     const body = completionXML(parts);
-    const finish = await signOperation(
+    const finish = await prepareOperation(
       bucketId,
       ObjectAction.MultipartCopyComplete,
       {
@@ -439,7 +501,7 @@ async function copyMultipart(
     const response = await fetchS3(finish.url, {
       method: "POST",
       body,
-      credentials: "omit",
+      credentials: "same-origin",
     });
     if (!response.ok)
       throw new Error(`cannot complete S3 copy (${response.status})`);
@@ -447,7 +509,7 @@ async function copyMultipart(
   } catch (cause) {
     await abortMultipart(async () => {
       const cleanupSignal = AbortSignal.timeout(10000);
-      const abort = await signOperation(
+      const abort = await prepareOperation(
         bucketId,
         ObjectAction.MultipartCopyAbort,
         {
@@ -458,7 +520,7 @@ async function copyMultipart(
       );
       return fetchS3(abort.url, {
         method: "DELETE",
-        credentials: "omit",
+        credentials: "same-origin",
         signal: cleanupSignal,
       });
     }, cause);

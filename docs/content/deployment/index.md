@@ -26,7 +26,7 @@ Open `http://localhost:8080` and sign in with the Garage admin token. Use `local
 
 This refactor requires a fresh Web UI database and the new `session-secret`. Previous Web UI account schemas and authentication flags are unsupported. Garage data is unaffected.
 
-The application requires PostgreSQL or SQLite, a Garage Admin API URL, and a session encryption key. Set a public origin and, for browser object access, a browser-reachable S3 API endpoint. Keep the database credentials, session encryption key private. For replica coordination, use a direct PostgreSQL connection or session pooling, not transaction or statement pooling. See [Configuration](../configuration/index.md) for the available settings.
+The application requires PostgreSQL or SQLite, a Garage Admin API URL, and a session encryption key. Set a public Web UI origin and a server-reachable S3 endpoint. A browser-reachable S3 endpoint is optional for direct transfers. Keep the database credentials, session encryption key private. For replica coordination, use a direct PostgreSQL connection or session pooling, not transaction or statement pooling. See [Configuration](../configuration/index.md) for the available settings.
 
 ## Docker Compose
 
@@ -73,3 +73,7 @@ For buckets used with multipart uploads or copies, configure an abort-incomplete
 For a single Web UI instance, set `GARAGE_WEBUI__DATABASE_URL=sqlite:///data/garage-webui.db` and mount a persistent directory at `/data`, writable by UID 65532. Keep `GARAGE_WEBUI__SESSION_SECRET` stable. PostgreSQL and its credentials are unnecessary for this deployment. The supplied Compose and Kubernetes examples continue to use PostgreSQL by default.
 
 For Kubernetes, use one replica with the `Recreate` deployment strategy and a persistent volume for `/data`. A rolling update must not start another instance against the same SQLite file. See [SQLite configuration](../configuration/index.md#sqlite) for locking and backup requirements.
+
+## Streamed file transfers
+
+Default uploads and downloads pass through the Web UI. Configure ingress and reverse-proxy body limits and timeouts for the intended transfers. Multipart uploads send individual parts through the backend; ensure request limits permit the configured part sizes. Avoid request/response buffering at the ingress if it would spool large transfers to disk. For very large files, the explicit direct-to-S3 actions bypass these Web UI limits and use the public S3 endpoint instead.

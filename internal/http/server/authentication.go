@@ -23,6 +23,8 @@ func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc
 		Scope []string `json:"scope"`
 		// UploadsEnabled reports whether uploads are available to this session.
 		UploadsEnabled bool `json:"uploadsEnabled"`
+		// DirectTransfersEnabled reports whether the public S3 endpoint is available.
+		DirectTransfersEnabled bool `json:"directTransfersEnabled"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := authentication.Authenticate(r)
@@ -34,10 +36,11 @@ func Session(authentication *auth.Service, logger *slog.Logger) http.HandlerFunc
 		}
 
 		writeJSON(w, http.StatusOK, sessionResponse{
-			Mode:           id.Credential.Kind,
-			User:           id.User,
-			Scope:          id.Scope,
-			UploadsEnabled: authentication.S3PublicURL != "",
+			Mode:                   id.Credential.Kind,
+			User:                   id.User,
+			Scope:                  id.Scope,
+			UploadsEnabled:         authentication.S3URL != "",
+			DirectTransfersEnabled: authentication.S3PublicURL != "",
 		})
 	}
 }

@@ -142,18 +142,10 @@ test.describe.serial("Garage credentials and storage", () => {
       accessKeyId: key.accessKeyId,
       permissions: { read: true },
     });
+    // Default browsing must work without bucket CORS.
     await garage(
       "UpdateBucket",
-      {
-        corsRules: [
-          {
-            AllowedOrigin: [origin],
-            AllowedMethod: ["GET", "PUT", "POST", "DELETE"],
-            AllowedHeader: ["*"],
-            ExposeHeader: ["ETag"],
-          },
-        ],
-      },
+      { corsRules: [] },
       `?id=${encodeURIComponent(selected.id)}`,
     );
     await page.goto("./");
@@ -235,7 +227,7 @@ test.describe.serial("Garage credentials and storage", () => {
       buffer: Buffer.from("retry"),
     });
     await page.route(
-      "**/retry.txt?*",
+      "**/api/objects/transfer?*",
       (route) =>
         route.request().method() === "PUT"
           ? route.fulfill({ status: 503, body: "unavailable" })
@@ -313,51 +305,65 @@ test.describe.serial("Garage credentials and storage", () => {
     }
   });
 
-  test("completes a multipart upload", async ({ page }) => {
-    test.skip(
-      process.env.E2E_LARGE_UPLOAD !== "1",
-      "Set E2E_LARGE_UPLOAD=1 to run the 257 MiB multipart test",
-    );
-    test.setTimeout(300_000);
-    const dir = await mkdtemp(join(tmpdir(), "garage-webui-e2e-"));
-    const path = join(dir, "multipart.bin");
-    try {
-      const file = await open(path, "w");
-      try {
-        await file.truncate(257 * 1024 * 1024);
-      } finally {
-        await file.close();
-      }
-      await page.context().addCookies(administratorCookies);
-      await page.goto("./");
-      await page.getByRole("button", { name: "Buckets" }).click();
-      await page.getByText(bucket).first().click();
-      await page.getByRole("tab", { name: "Browse" }).click();
-      await page
-        .getByRole("button", { name: /upload/i })
-        .first()
-        .click();
-      const dialog = page.getByRole("dialog");
-      await dialog.locator('input[type="file"]').setInputFiles(path);
-      const complete = page.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" &&
-          response.url().includes("uploadId="),
+  for (const direct of [false, true]) {
+    test(`completes a ${direct ? "direct" : "backend"} multipart upload`, async ({
+      page,
+    }) => {
+      test.skip(
+        process.env.E2E_LARGE_UPLOAD !== "1",
+        "Set E2E_LARGE_UPLOAD=1 to run the 257 MiB multipart test",
       );
-      await dialog.getByRole("button", { name: "Upload file" }).click();
-      expect((await complete).ok()).toBeTruthy();
-      await expect(dialog.getByText("1 / 1 completed")).toBeVisible();
-      await dialog.getByRole("button", { name: "Close", exact: true }).click();
-      await expect(
-        page
-          .locator(".explorer-row:not(.explorer-folder)")
-          .filter({ hasText: "multipart.bin" }),
-      ).toBeVisible();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
+      test.setTimeout(300_000);
+      const dir = await mkdtemp(join(tmpdir(), "garage-webui-e2e-"));
+      const path = join(dir, "multipart.bin");
+      try {
+        const file = await open(path, "w");
+        try {
+          await file.truncate(257 * 1024 * 1024);
+        } finally {
+          await file.close();
+        }
+        await page.context().addCookies(administratorCookies);
+        await page.goto("./");
+        await page.getByRole("button", { name: "Buckets" }).click();
+        await page.getByText(bucket).first().click();
+        await page.getByRole("tab", { name: "Browse" }).click();
+        await page
+          .getByRole("button", { name: /upload/i })
+          .first()
+          .click();
+        const dialog = page.getByRole("dialog");
+        await dialog.locator('input[type="file"]').setInputFiles(path);
+        const complete = page.waitForResponse(
+          (response) =>
+            response.request().method() === "POST" &&
+            (direct
+              ? response.url().includes("uploadId=")
+              : response.url().includes("/api/objects/transfer?") &&
+                JSON.parse(new URL(response.url()).searchParams.get("request"))
+                  .action === "multipart-complete"),
+        );
+        await dialog
+          .getByRole("button", {
+            name: direct ? "Upload directly to S3" : "Upload file",
+            exact: true,
+          })
+          .click();
+        expect((await complete).ok()).toBeTruthy();
+        await expect(dialog.getByText("1 / 1 completed")).toBeVisible();
+        await dialog
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        await expect(
+          page
+            .locator(".explorer-row:not(.explorer-folder)")
+            .filter({ hasText: "multipart.bin" }),
+        ).toBeVisible();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
   test("cancels and aborts a multipart upload", async ({ page }) => {
     test.skip(
       process.env.E2E_LARGE_UPLOAD !== "1",
@@ -394,7 +400,9 @@ test.describe.serial("Garage credentials and storage", () => {
       await page.route("**/*", async (route) => {
         if (
           route.request().method() === "PUT" &&
-          route.request().url().includes("partNumber=")
+          route.request().url().includes("/api/objects/transfer?") &&
+          JSON.parse(new URL(route.request().url()).searchParams.get("request"))
+            .action === "multipart-part"
         ) {
           partStarted();
           await gate;
@@ -406,7 +414,9 @@ test.describe.serial("Garage credentials and storage", () => {
       const abort = page.waitForResponse(
         (response) =>
           response.request().method() === "DELETE" &&
-          response.url().includes("uploadId="),
+          response.url().includes("/api/objects/transfer?") &&
+          JSON.parse(new URL(response.url()).searchParams.get("request"))
+            .action === "multipart-abort",
       );
       await dialog.getByRole("button", { name: "Cancel uploads" }).click();
       release();
@@ -512,4 +522,90 @@ test("keeps sign-in anchored and restores the preferred theme after signing out"
   await login(page);
   await page.getByRole("button", { name: /^My profile:/ }).click();
   await expect(page.getByLabel("Theme")).toHaveValue("Dark");
+});
+
+test("streams S3-key uploads and downloads without bucket CORS", async ({
+  page,
+}) => {
+  const alias = `backend-transfer-${Date.now()}`;
+  const created = await garage("CreateBucket", { globalAlias: alias });
+  const key = await garage("CreateKey", { name: "backend-transfer-user" });
+  await garage("AllowBucketKey", {
+    bucketId: created.id,
+    accessKeyId: key.accessKeyId,
+    permissions: { read: true, write: true },
+  });
+  await page.goto("./");
+  await page.getByRole("tab", { name: "S3 credentials" }).click();
+  await page.getByLabel("Access key ID").fill(key.accessKeyId);
+  await page.getByLabel("Secret access key").fill(key.secretAccessKey);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByText(alias, { exact: true }).first().click();
+  await expect(page.getByText("Nothing here")).toBeVisible();
+  await page
+    .getByRole("button", { name: /upload/i })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "backend.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("streamed without CORS"),
+  });
+  await dialog
+    .getByRole("button", { name: "Upload file", exact: true })
+    .click();
+  await expect(dialog.getByText("1 / 1 completed")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  const row = page.locator(".explorer-row").filter({ hasText: "backend.txt" });
+  await expect(row).toBeVisible();
+  await row.getByTitle("Preview").click();
+  await expect(
+    page.getByText("streamed without CORS", { exact: true }),
+  ).toBeVisible();
+  const download = page.waitForEvent("download");
+  await row.getByTitle("Download", { exact: true }).click();
+  expect((await download).url()).toContain("/api/objects/transfer?");
+  const info = await garage("GetBucketInfo", undefined, `?id=${created.id}`);
+  expect(info.corsRules || []).toEqual([]);
+});
+
+test("offers explicit signed S3 uploads and downloads", async ({ page }) => {
+  const alias = `direct-transfer-${Date.now()}`;
+  const created = await garage("CreateBucket", { globalAlias: alias });
+  await login(page);
+  await page.getByRole("button", { name: "Buckets", exact: true }).click();
+  await page.getByText(alias, { exact: true }).first().click();
+  await page.getByRole("tab", { name: "Browse" }).click();
+  await page
+    .getByRole("button", { name: /upload/i })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "direct.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("direct upload"),
+  });
+  const put = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" &&
+      response.url().includes("X-Amz-Signature="),
+  );
+  await dialog
+    .getByRole("button", { name: "Upload directly to S3", exact: true })
+    .click();
+  expect((await put).ok()).toBeTruthy();
+  await expect(dialog.getByText("1 / 1 completed")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "direct.txt", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download directly from S3", exact: true })
+    .click();
+  expect((await download).url()).toContain("X-Amz-Signature=");
+  const info = await garage("GetBucketInfo", undefined, `?id=${created.id}`);
+  expect(
+    info.corsRules.some((rule) => rule.AllowedOrigin.includes(origin)),
+  ).toBeTruthy();
 });

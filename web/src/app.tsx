@@ -569,6 +569,7 @@ function Workspace({
                   enabled={session.uploadsEnabled}
                   refreshVersion={objectsVersion}
                   onFolderChange={setUploadPrefix}
+                  directTransfersEnabled={session.directTransfersEnabled}
                   onUpload={() => setUploadBucket(details)}
                 />
               )}
@@ -616,6 +617,7 @@ function Workspace({
         <UploadDialog
           bucketId={uploadBucket.id}
           initialPrefix={uploadPrefix}
+          directTransfersEnabled={session.directTransfersEnabled}
           bucketName={uploadBucket.globalAliases?.[0] || short(uploadBucket.id)}
           onClose={() => setUploadBucket(undefined)}
           onUploaded={() => setObjectsVersion((value) => value + 1)}

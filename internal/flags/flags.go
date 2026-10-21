@@ -3,11 +3,15 @@ package flags
 
 import (
 	"cmp"
+	"time"
 
 	appkitconfig "github.com/containeroo/appkit/config"
 	"github.com/containeroo/garage-webui/internal/database"
 	"github.com/containeroo/tinyflags"
 )
+
+// DefaultS3ResponseHeaderTimeout bounds upstream response-header waits, not file transfers.
+const DefaultS3ResponseHeaderTimeout = 45 * time.Second
 
 // Config contains deployment settings.
 type Config struct {
@@ -25,6 +29,8 @@ type Config struct {
 	S3URL string
 	// S3PublicURL is the browser-accessible S3 API endpoint used for direct uploads.
 	S3PublicURL string
+	// S3ResponseHeaderTimeout controls the backend S3 response-header wait.
+	S3ResponseHeaderTimeout time.Duration
 	// S3Region is the Garage S3 region used for SigV4 signing.
 	S3Region string
 	// Overrides contains explicitly configured flag values.
@@ -71,12 +77,21 @@ func registerGarage(tf *tinyflags.FlagSet, cfg *Config) {
 
 // registerS3 registers S3 flags and returns the endpoint-default finalizer.
 func registerS3(tf *tinyflags.FlagSet, cfg *Config) func() {
-	tf.StringVar(&cfg.S3URL, "s3-url", "", "Server-side Garage S3 API origin (defaults to s3-public-url).").
+	tf.StringVar(&cfg.S3URL, "s3-url", "", "Garage S3 API origin for backend browsing and transfers (defaults to s3-public-url).").
 		Value()
-	tf.StringVar(&cfg.S3PublicURL, "s3-public-url", "", "Browser-accessible Garage S3 API origin for direct uploads (optional).").
+	tf.StringVar(&cfg.S3PublicURL, "s3-public-url", "", "Browser-accessible Garage S3 API origin for optional direct uploads and downloads.").
 		Value()
 
 	tf.StringVar(&cfg.S3Region, "s3-region", "garage", "Garage S3 region for signed upload URLs.").
+		Value()
+
+	tf.DurationVar(
+		&cfg.S3ResponseHeaderTimeout,
+		"s3-response-header-timeout",
+		DefaultS3ResponseHeaderTimeout,
+		"Maximum wait for S3 response headers after uploading the body; 0 disables the timeout.",
+	).
+		Validate(tinyflags.NonNegative[time.Duration]()).
 		Value()
 
 	return func() {

@@ -43,11 +43,12 @@ function normalizedPrefix(value: string): string {
   return prefix + "/";
 }
 
-// UploadDialog queues files and uploads them directly to Garage, one at a time.
+// UploadDialog queues streamed backend uploads with an explicit direct-to-S3 alternative.
 export function UploadDialog({
   bucketId,
   bucketName,
   initialPrefix = "",
+  directTransfersEnabled = false,
   onClose,
   onUploaded,
 }: {
@@ -57,6 +58,8 @@ export function UploadDialog({
   bucketName: string;
   /** Folder prefix initially selected for new uploads. */
   initialPrefix?: string;
+  /** Allows the optional browser-to-S3 transfer action. */
+  directTransfersEnabled?: boolean;
   /** Closes the dialog or editor owned by the parent view. */
   onClose: () => void;
   /** Refreshes the listing after at least one file in the batch succeeds. */
@@ -105,7 +108,7 @@ export function UploadDialog({
   }
 
   /** start uploads queued files sequentially and reports successful completion once per batch. */
-  async function start() {
+  async function start(mode: "server" | "direct" = "server") {
     if (
       controller.current ||
       !queue.some(
@@ -159,6 +162,7 @@ export function UploadDialog({
               eta: speed > 0 ? (entry.file.size - loaded) / speed : null,
             });
           },
+          mode,
         );
         pending[i] = { ...entry, status: UploadStatus.Done };
         anyUploaded = true;
@@ -297,6 +301,11 @@ export function UploadDialog({
             {error}
           </p>
         )}
+        <p className="settings-note">
+          {directTransfersEnabled
+            ? "Uploads normally pass through the Web UI. Direct uploads use signed S3 URLs and require bucket CORS to allow this Web UI origin."
+            : "Files stream through the Web UI to Garage."}
+        </p>
         <div className="modal-actions">
           <Button
             type="button"
@@ -308,6 +317,19 @@ export function UploadDialog({
           >
             {busy ? "Cancel uploads" : "Close"}
           </Button>
+          {directTransfersEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                busy ||
+                !queue.some((entry) => entry.status !== UploadStatus.Done)
+              }
+              onClick={() => void start("direct")}
+            >
+              Upload directly to S3
+            </Button>
+          )}
           <Button
             type="button"
             disabled={

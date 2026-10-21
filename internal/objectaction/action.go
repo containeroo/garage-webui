@@ -7,6 +7,8 @@ import "net/http"
 type Action string
 
 const (
+	// Upload sends a complete object in a single request.
+	Upload Action = "upload"
 	// List retrieves a page of object metadata and folder prefixes.
 	List Action = "list"
 	// Download retrieves an object as an attachment.
@@ -40,7 +42,7 @@ func (action Action) Method() (string, bool) {
 	switch action {
 	case List, Download, Preview:
 		return http.MethodGet, true
-	case Copy, MultipartPart, MultipartCopyPart:
+	case Upload, Copy, MultipartPart, MultipartCopyPart:
 		return http.MethodPut, true
 	case Delete, MultipartAbort, MultipartCopyAbort:
 		return http.MethodDelete, true

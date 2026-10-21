@@ -1,0 +1,3 @@
+- create a helper mehod so i can pass methods and stuff for handlers
+- why are functions like Session not in endpoint package like in kumbuka?
+-

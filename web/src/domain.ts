@@ -11,6 +11,8 @@ export type CredentialKind =
 
 /** Object actions shared by direct transfer requests and backend authorization. */
 export const ObjectAction = {
+  /** Sends an object in a single upload request. */
+  Upload: "upload",
   /** Retrieves a page of object and folder metadata. */
   List: "list",
   /** Downloads an object as an attachment. */

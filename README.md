@@ -24,24 +24,28 @@ For deployable Compose and Kubernetes examples, including persistent storage and
 
 ## Flags
 
-| Flag                          | Description                                                          |
-| ----------------------------- | -------------------------------------------------------------------- |
-| `--database-url`              | PostgreSQL connection URL or SQLite file URL (required)              |
-| `--session-secret`            | Base64-encoded 32-byte key encrypting credential sessions (required) |
-| `--garage-url`                | Garage Admin API URL (required)                                      |
-| `--listen-address`            | Web UI listen address (default `127.0.0.1:8080`)                     |
-| `--management-listen-address` | Health endpoint listen address (default `127.0.0.1:8081`)            |
-| `--public-url`                | Public origin (default `http://localhost:8080`)                      |
-| `--route-prefix`              | Optional URL path prefix                                             |
-| `--s3-public-url`             | Browser-accessible Garage S3 endpoint for objects                    |
-| `--s3-region`                 | S3 region (default `garage`)                                         |
-| `--log-format`                | `json` or `text`                                                     |
-| `--debug`                     | Enable debug logging                                                 |
-| `--access-log`                | Enable HTTP access logging                                           |
+| Flag                          | Description                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `--database-url`              | PostgreSQL connection URL or SQLite file URL (required)                                 |
+| `--session-secret`            | Base64-encoded 32-byte key encrypting credential sessions (required)                    |
+| `--garage-url`                | Garage Admin API URL (required)                                                         |
+| `--listen-address`            | Web UI listen address (default `127.0.0.1:8080`)                                        |
+| `--management-listen-address` | Health endpoint listen address (default `127.0.0.1:8081`)                               |
+| `--public-url`                | Public origin (default `http://localhost:8080`)                                         |
+| `--route-prefix`              | Optional URL path prefix                                                                |
+| `--s3-url`                    | Garage S3 endpoint for backend browsing and transfers (falls back to `--s3-public-url`) |
+| `--s3-public-url`             | Optional public S3 endpoint for direct uploads and downloads                            |
+| `--s3-response-header-timeout` | S3 response-header wait after sending a request body (default `45s`; `0` disables) |
+| `--s3-region`                 | S3 region (default `garage`)                                                            |
+| `--log-format`                | `json` or `text`                                                                        |
+| `--debug`                     | Enable debug logging                                                                    |
+| `--access-log`                | Enable HTTP access logging                                                              |
 
 Flags are also available as environment variables prefixed with `GARAGE_WEBUI__`, for example `GARAGE_WEBUI__ROUTE_PREFIX=/garage`. Run `garage-webui --help` for the complete list.
 
 For a single instance, use `GARAGE_WEBUI__DATABASE_URL=sqlite:///data/garage-webui.db` with a persistent, writable `/data` directory. PostgreSQL remains available for multiple replicas. See [SQLite configuration](docs/content/configuration/index.md#sqlite) for details.
+
+Normal browsing, uploads, and downloads stream through the Go backend and do not need bucket CORS. Optional **Upload directly to S3** and **Download directly from S3** actions use signed URLs; direct uploads require bucket CORS.
 
 ## Authentication
 

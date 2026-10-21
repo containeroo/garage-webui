@@ -11,8 +11,9 @@ Flags are also available as environment variables prefixed with `GARAGE_WEBUI__`
 | `--management-listen-address` | Health endpoint listen address (default `127.0.0.1:8081`) |
 | `--public-url` | Public origin (default `http://localhost:8080`) |
 | `--route-prefix` | Optional URL path prefix |
-| `--s3-url` | Server-side Garage S3 endpoint (defaults to `--s3-public-url`) |
-| `--s3-public-url` | Browser-accessible Garage S3 endpoint for objects |
+| `--s3-url` | Server-side Garage S3 endpoint for browsing and streamed transfers (defaults to `--s3-public-url`) |
+| `--s3-public-url` | Optional browser-accessible S3 endpoint for direct transfers |
+| `--s3-response-header-timeout` | Maximum S3 response-header wait after sending the body (default `45s`; `0` disables) |
 | `--s3-region` | S3 region (default `garage`) |
 | `--log-format` | `json` or `text` |
 | `--debug` | Enable debug logging |
@@ -38,6 +39,14 @@ SQLite uses WAL mode. Stop the application before copying its database for backu
 
 ### Separate server and browser S3 endpoints
 
-Set `GARAGE_WEBUI__S3_URL=http://garage-backup:3900` for server-side S3 credential validation and bucket discovery. Keep `GARAGE_WEBUI__S3_PUBLIC_URL=https://garage-s3.example.com` for browser-signed object operations. The internal endpoint may use HTTP even when the Web UI uses HTTPS. Both settings must be origins without paths, credentials, queries, or fragments.
+Set `GARAGE_WEBUI__S3_URL=http://garage-backup:3900` for S3 credential validation, browsing, and streamed object operations. Keep `GARAGE_WEBUI__S3_PUBLIC_URL=https://garage-s3.example.com` for optional browser-direct uploads and downloads. The internal endpoint may use HTTP even when the Web UI uses HTTPS. Both settings must be origins without paths, credentials, queries, or fragments.
 
 When `--s3-url` is unset, server-side requests use `--s3-public-url`. It does not fall back to the Web UI's `--public-url`. The browser endpoint must remain reachable from the browser and must use HTTPS for an HTTPS Web UI. With a separate internal S3 endpoint, the Web UI pod can contact Garage directly on port 3900 instead of going through the public gateway.
+
+### Transfer behavior
+
+All default object operations go through the Go backend. Upload and download bytes stream without buffering the complete file. Multipart uploads retain cancellation and abort cleanup, and downloads support range requests. Backend operations use `--s3-url` and the current session's Garage credentials; no shared administrator credential is introduced.
+
+The upload dialog offers a separate **Upload directly to S3** button. Selected object details offer **Download directly from S3**. These buttons are shown only when `--s3-public-url` is configured. Direct uploads require bucket CORS and do not silently fall back to backend uploads on failure. Normal transfers need no public S3 endpoint when `--s3-url` is provided.
+
+The response-header timeout can also be set with `GARAGE_WEBUI__S3_RESPONSE_HEADER_TIMEOUT`. It does not limit upload/download streaming duration. Transfer metadata is limited to 16 KiB and multipart control XML to 8 MiB; these are protocol bounds, not file-size limits. File requests use the existing S3 single-request/part limits.
