@@ -2,7 +2,7 @@ name: garage-webui-dev
 # Local-only development stack. The credentials below are not for production.
 services:
   garage:
-    image: dxflrs/garage:v2.4.1
+    image: dxflrs/garage:v2.5.0
     command: ["/garage", "server", "--single-node"]
     environment:
       GARAGE_ADMIN_TOKEN: local-garage-admin-token

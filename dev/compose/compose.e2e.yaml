@@ -1,7 +1,7 @@
 # Disposable E2E services. All credentials and data are for tests only.
 services:
   garage:
-    image: dxflrs/garage:v2.4.1
+    image: dxflrs/garage:v2.5.0
     command: ["/garage", "server", "--single-node"]
     environment:
       GARAGE_ADMIN_TOKEN: local-garage-admin-token
