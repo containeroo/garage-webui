@@ -2,22 +2,22 @@
 
 Flags are also available as environment variables prefixed with `GARAGE_WEBUI__`, with hyphens replaced by underscores. For example, `--route-prefix` becomes `GARAGE_WEBUI__ROUTE_PREFIX`. Run `garage-webui --help` for the complete list.
 
-| Flag | Description |
-| --- | --- |
-| `--database-url` | PostgreSQL connection URL or SQLite file URL (required) |
-| `--session-secret` | Base64-encoded 32-byte key encrypting credential sessions (required) |
-| `--garage-url` | Garage Admin API URL (required) |
-| `--listen-address` | Web UI listen address (default `127.0.0.1:8080`) |
-| `--management-listen-address` | Health endpoint listen address (default `127.0.0.1:8081`) |
-| `--public-url` | Public origin (default `http://localhost:8080`) |
-| `--route-prefix` | Optional URL path prefix |
-| `--s3-url` | Server-side Garage S3 endpoint for browsing and streamed transfers (defaults to `--s3-public-url`) |
-| `--s3-public-url` | Optional browser-accessible S3 endpoint for direct transfers |
-| `--s3-response-header-timeout` | Maximum S3 response-header wait after sending the body (default `45s`; `0` disables) |
-| `--s3-region` | S3 region (default `garage`) |
-| `--log-format` | `json` or `text` |
-| `--debug` | Enable debug logging |
-| `--access-log` | Enable HTTP access logging |
+| Flag                           | Description                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `--database-url`               | PostgreSQL connection URL or SQLite file URL (required)                                            |
+| `--session-secret`             | Base64-encoded 32-byte key encrypting credential sessions (required)                               |
+| `--garage-url`                 | Garage Admin API URL (required)                                                                    |
+| `--listen-address`             | Web UI listen address (default `127.0.0.1:8080`)                                                   |
+| `--management-listen-address`  | Health endpoint listen address (default `127.0.0.1:8081`)                                          |
+| `--public-url`                 | Public origin (default `http://localhost:8080`)                                                    |
+| `--route-prefix`               | Optional URL path prefix                                                                           |
+| `--s3-url`                     | Server-side Garage S3 endpoint for browsing and streamed transfers (defaults to `--s3-public-url`) |
+| `--s3-public-url`              | Optional browser-accessible S3 endpoint for direct transfers                                       |
+| `--s3-response-header-timeout` | Maximum S3 response-header wait after sending the body (default `45s`; `0` disables)               |
+| `--s3-region`                  | S3 region (default `garage`)                                                                       |
+| `--log-format`                 | `json` or `text`                                                                                   |
+| `--debug`                      | Enable debug logging                                                                               |
+| `--access-log`                 | Enable HTTP access logging                                                                         |
 
 ## Authentication
 
