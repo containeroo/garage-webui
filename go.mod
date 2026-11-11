@@ -7,7 +7,7 @@ require (
 	github.com/containeroo/httpkit v0.1.1
 	github.com/containeroo/tinyflags v0.10.0
 	github.com/gofrs/flock v0.13.2
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/stretchr/testify v1.12.1
 	modernc.org/sqlite v1.62.0
