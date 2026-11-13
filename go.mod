@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/containeroo/appkit v0.7.0
-	github.com/containeroo/httpkit v0.1.1
+	github.com/containeroo/httpkit v0.2.0
 	github.com/containeroo/tinyflags v0.12.0
 	github.com/gofrs/flock v0.13.2
 	github.com/jackc/pgx/v5 v5.13.0
@@ -23,7 +23,7 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	modernc.org/libc v1.80.1 // indirect
