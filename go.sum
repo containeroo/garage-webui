@@ -2,6 +2,8 @@ github.com/containeroo/appkit v0.7.0 h1:IBIoCYKsJEbt8fnnkIR/IlOoJ4mmbVZSJqURGnox
 github.com/containeroo/appkit v0.7.0/go.mod h1:PavEm/5jxpuaJZqrWw6HH/EY/r7fpZUCYo7nKRGSOT4=
 github.com/containeroo/appkit v0.8.0 h1:croevn/9qrJtw5NLQxrsXu1OkvzkrMSmE7kyeKc4tew=
 github.com/containeroo/appkit v0.8.0/go.mod h1:uhgQI8926HCa03N5DBEmuytviJRQU5jezLJEwyd862o=
+github.com/containeroo/appkit v0.8.1 h1:jxkUy+1WKbGFvUnroE77OZDXQFk6G3om0eapL6H+G/I=
+github.com/containeroo/appkit v0.8.1/go.mod h1:zWPe1aG6moPuqLuV4KjSZJ6Wl4Fg3jIeyhYmU9mPgYc=
 github.com/containeroo/httpkit v0.0.3 h1:msDWnXu3fhAja9aOXfP6vw6GO803zHW9/lgp+cqOQQU=
 github.com/containeroo/httpkit v0.0.3/go.mod h1:3O+ot7igC5SMFIsVu7nZmBNewa4VbigOOu47eGR9qaI=
 github.com/containeroo/httpkit v0.1.1 h1:Mu6RJX84mY74vaj+vIEu3wqqIntTGMrmCTTmplJhd3s=
