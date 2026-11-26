@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/containeroo/garage-webui/internal/cli"
 	"github.com/containeroo/garage-webui/internal/database"
-	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/garage-webui/themes"
 	"github.com/containeroo/garage-webui/web"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +22,7 @@ func TestDatabaseOwnership(t *testing.T) {
 	t.Run("shutdown", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := flags.Config{
+		cfg := cli.Flags{
 			Database:      database.Config{URL: "sqlite:" + filepath.Join(t.TempDir(), "console.db")},
 			GarageURL:     "http://garage.example:3903",
 			SessionSecret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -62,7 +62,7 @@ func TestDatabaseOwnership(t *testing.T) {
 	t.Run("authentication initialization fails", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := flags.Config{
+		cfg := cli.Flags{
 			Database:      database.Config{URL: "sqlite:" + filepath.Join(t.TempDir(), "console.db")},
 			GarageURL:     "http://garage.example:3903",
 			SessionSecret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -86,7 +86,7 @@ func TestDatabaseOwnership(t *testing.T) {
 	t.Run("S3 validation fails", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := flags.Config{
+		cfg := cli.Flags{
 			Database:      database.Config{URL: "sqlite:" + filepath.Join(t.TempDir(), "console.db")},
 			GarageURL:     "http://garage.example:3903",
 			SessionSecret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

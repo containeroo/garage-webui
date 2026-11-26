@@ -14,29 +14,12 @@ services:
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
 
-  postgres:
-    image: postgres:19-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: garage_webui
-      POSTGRES_USER: garage_webui
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
-    volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U garage_webui -d garage_webui"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
   webui:
     image: ${GARAGE_WEBUI_IMAGE:-ghcr.io/containeroo/garage-webui:latest}
     restart: unless-stopped
     depends_on:
       garage:
         condition: service_started
-      postgres:
-        condition: service_healthy
     command:
       [
         "--listen-address",
@@ -45,7 +28,7 @@ services:
         "0.0.0.0:8081",
       ]
     environment:
-      GARAGE_WEBUI__DATABASE_URL: postgres://garage_webui:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/garage_webui?sslmode=disable
+      GARAGE_WEBUI__DATABASE_URL: sqlite:///data/garage-webui.db
       GARAGE_WEBUI__GARAGE_URL: http://garage:3903
       GARAGE_WEBUI__SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in deploy/.env}
       GARAGE_WEBUI__PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
@@ -54,8 +37,10 @@ services:
       GARAGE_WEBUI__S3_REGION: garage
     ports:
       - "${WEBUI_BIND_ADDRESS:-127.0.0.1}:${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - webui-data:/data
 
 volumes:
   garage-meta:
   garage-data:
-  postgres-data:
+  webui-data:

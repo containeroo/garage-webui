@@ -7,7 +7,7 @@ import (
 
 	"github.com/containeroo/garage-webui/internal/application/jobs"
 	"github.com/containeroo/garage-webui/internal/assembly"
-	"github.com/containeroo/garage-webui/internal/flags"
+	"github.com/containeroo/garage-webui/internal/cli"
 	"github.com/containeroo/garage-webui/internal/http/auth"
 	"github.com/containeroo/garage-webui/internal/http/endpoint"
 	"github.com/containeroo/garage-webui/internal/http/server"
@@ -19,7 +19,7 @@ import (
 // newServer wires authentication, object services and HTTP handlers.
 // The caller retains ownership of the database on both success and failure.
 func newServer(
-	cfg flags.Config,
+	cfg cli.Flags,
 	logger *slog.Logger,
 	db storage.Store,
 	assets fs.FS,

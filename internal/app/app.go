@@ -10,7 +10,7 @@ import (
 	"github.com/containeroo/appkit/httpserver"
 	"github.com/containeroo/appkit/logging"
 	"github.com/containeroo/garage-webui/internal/bootstrap"
-	"github.com/containeroo/garage-webui/internal/flags"
+	"github.com/containeroo/garage-webui/internal/cli"
 	"github.com/containeroo/httpkit/grace"
 	"github.com/containeroo/tinyflags"
 )
@@ -23,7 +23,7 @@ func Run(
 	version, commit string,
 	stdout, stderr io.Writer,
 ) error {
-	cfg, err := flags.Parse(args, version)
+	flags, err := cli.Parse(args, version)
 	if err != nil {
 		if tinyflags.IsHelpRequested(err) || tinyflags.IsVersionRequested(err) {
 			fmt.Fprint(stdout, err.Error()) // nolint:errcheck
@@ -34,7 +34,7 @@ func Run(
 		return err
 	}
 
-	logger := logging.Setup(cfg.Logging.Format, cfg.Logging.Debug, stderr)
+	logger := logging.Setup(flags.Logging.Format, flags.Logging.Debug, stderr)
 	setupLogger := logger.With("component", "setup")
 	setupLogger.Info(
 		"starting Garage Web UI",
@@ -42,14 +42,14 @@ func Run(
 		"version", version,
 		"commit", commit,
 	)
-	if len(cfg.Overrides) > 0 {
-		setupLogger.Info("CLI Overrides", "event", "cli_overrides", "overrides", cfg.Overrides.Values())
+	if len(flags.Overrides) > 0 {
+		setupLogger.Info("CLI Overrides", "event", "cli_overrides", "overrides", flags.Overrides.Values())
 	}
 
 	ctx, stop := grace.SignalContext(ctx)
 	defer stop()
 
-	application, err := bootstrap.New(ctx, cfg, logger, assets, themes)
+	application, err := bootstrap.New(ctx, flags, logger, assets, themes)
 	if err != nil {
 		logger.Error("initialize application", "error", err)
 		return err
@@ -61,12 +61,12 @@ func Run(
 		httpserver.Config{
 			Application: application.Handler(),
 			Management:  application.Management(),
-			RoutePrefix: cfg.Server.RoutePrefix,
+			RoutePrefix: flags.Server.RoutePrefix,
 		})
 	if err := httpserver.Run(
 		ctx,
-		cfg.Server.ListenAddress,
-		cfg.Server.ManagementListenAddress,
+		flags.Server.ListenAddress,
+		flags.Server.ManagementListenAddress,
 		handlers,
 		logger,
 		logger,

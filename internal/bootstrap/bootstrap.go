@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/containeroo/garage-webui/internal/application/jobs"
+	"github.com/containeroo/garage-webui/internal/cli"
 	"github.com/containeroo/garage-webui/internal/database"
-	"github.com/containeroo/garage-webui/internal/flags"
 	"github.com/containeroo/garage-webui/internal/http/server"
 	"github.com/containeroo/garage-webui/internal/storage"
 	"github.com/containeroo/garage-webui/themes"
@@ -35,7 +35,7 @@ type Application struct {
 }
 
 // New constructs application services and starts background maintenance.
-func New(ctx context.Context, cfg flags.Config, logger *slog.Logger, assets, themeFiles fs.FS) (*Application, error) {
+func New(ctx context.Context, cfg cli.Flags, logger *slog.Logger, assets, themeFiles fs.FS) (*Application, error) {
 	availableThemes, err := themes.Load(themeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("load themes: %w", err)

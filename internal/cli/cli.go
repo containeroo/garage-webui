@@ -1,5 +1,5 @@
 // Package flags parses deployment configuration.
-package flags
+package cli
 
 import (
 	"cmp"
@@ -13,8 +13,8 @@ import (
 // DefaultS3ResponseHeaderTimeout bounds upstream response-header waits, not file transfers.
 const DefaultS3ResponseHeaderTimeout = 45 * time.Second
 
-// Config contains deployment settings.
-type Config struct {
+// Flags contains deployment settings.
+type Flags struct {
 	// Server configures HTTP listeners.
 	Server appkitconfig.Server
 	// Database selects SQLite or PostgreSQL.
@@ -38,33 +38,32 @@ type Config struct {
 }
 
 // Parse reads command-line flags and environment variables.
-func Parse(args []string, version string) (Config, error) {
-	var cfg Config
+func Parse(args []string, version string) (flags Flags, err error) {
 	tf := appkitconfig.NewFlagSet("garage-webui", "GARAGE_WEBUI", version)
 
-	registerDatabase(tf, &cfg.Database)
-	finalizeServer := appkitconfig.RegisterServer(tf, &cfg.Server, appkitconfig.ServerOptions{})
+	registerDatabase(tf, &flags.Database)
+	finalizeServer := appkitconfig.RegisterServer(tf, &flags.Server, appkitconfig.ServerOptions{})
 
-	finalizeLogging := appkitconfig.RegisterLogging(tf, &cfg.Logging)
+	finalizeLogging := appkitconfig.RegisterLogging(tf, &flags.Logging)
 
-	registerGarage(tf, &cfg)
-	finalizeS3 := registerS3(tf, &cfg)
+	registerGarage(tf, &flags)
+	finalizeS3 := registerS3(tf, &flags)
 
 	if err := tf.Parse(args); err != nil {
-		return Config{}, err
+		return Flags{}, err
 	}
 
 	finalizeServer()
 	finalizeLogging()
 	finalizeS3()
 
-	cfg.Overrides = tf.Overrides()
+	flags.Overrides = tf.Overrides()
 
-	return cfg, nil
+	return flags, nil
 }
 
 // registerGarage registers Garage Admin API flags.
-func registerGarage(tf *tinyflags.FlagSet, cfg *Config) {
+func registerGarage(tf *tinyflags.FlagSet, cfg *Flags) {
 	tf.StringVar(&cfg.GarageURL, "garage-url", "", "Garage Admin API URL").
 		Required().
 		Value()
@@ -76,7 +75,7 @@ func registerGarage(tf *tinyflags.FlagSet, cfg *Config) {
 }
 
 // registerS3 registers S3 flags and returns the endpoint-default finalizer.
-func registerS3(tf *tinyflags.FlagSet, cfg *Config) func() {
+func registerS3(tf *tinyflags.FlagSet, cfg *Flags) func() {
 	tf.StringVar(&cfg.S3URL, "s3-url", "", "Garage S3 API origin for backend browsing and transfers (defaults to s3-public-url).").
 		Value()
 	tf.StringVar(&cfg.S3PublicURL, "s3-public-url", "", "Browser-accessible Garage S3 API origin for optional direct uploads and downloads.").

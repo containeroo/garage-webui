@@ -30,16 +30,27 @@ The application requires PostgreSQL or SQLite, a Garage Admin API URL, and a ses
 
 ## Docker Compose
 
-The example in `deploy/compose.yaml` starts Garage, PostgreSQL and the Web UI with persistent named volumes. Create `deploy/.env` with unique secrets before starting it (the generated PostgreSQL password is hexadecimal so it is safe in the connection URL):
+The default `deploy/compose.yaml` starts Garage and one Web UI instance using SQLite, with persistent named volumes. Create `deploy/.env` with unique secrets before starting it:
 
 ```sh
 umask 077
-printf 'GARAGE_ADMIN_TOKEN=%s\nGARAGE_RPC_SECRET=%s\nPOSTGRES_PASSWORD=%s\nSESSION_SECRET=%s\n' \
-  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -base64 32)" > deploy/.env
+printf 'GARAGE_ADMIN_TOKEN=%s\nGARAGE_RPC_SECRET=%s\nSESSION_SECRET=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -base64 32)" > deploy/.env
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d
 ```
 
-Open `http://localhost:8080` and sign in with the Garage admin token. The UI and S3 ports bind to loopback by default. For remote access, configure `WEBUI_BIND_ADDRESS`, `S3_BIND_ADDRESS`, `PUBLIC_URL` and `S3_PUBLIC_URL` in `deploy/.env`; the S3 URL must be reachable by the user's browser. The host ports can also be changed with `WEBUI_PORT` and `S3_PORT`; update the public URLs to match. Use HTTPS through a reverse proxy for remote access. The Admin API and PostgreSQL are not published to the host. Set `GARAGE_WEBUI_IMAGE` to a specific release tag when deploying. Keep the volumes and secrets backed up; changing the PostgreSQL password in the environment does not change an existing database password.
+Open `http://localhost:8080` and sign in with the Garage admin token. The UI and S3 ports bind to loopback by default. For remote access, configure `WEBUI_BIND_ADDRESS`, `S3_BIND_ADDRESS`, `PUBLIC_URL` and `S3_PUBLIC_URL` in `deploy/.env`; the S3 URL must be reachable by the user's browser. The host ports can also be changed with `WEBUI_PORT` and `S3_PORT`; update the public URLs to match. Use HTTPS through a reverse proxy for remote access. The Admin API is not published to the host. Set `GARAGE_WEBUI_IMAGE` to a specific release tag when deploying. Keep the volumes and secrets backed up.
+
+For multiple Web UI replicas, add `deploy/compose.postgres.yaml`. It starts PostgreSQL and changes the Web UI database URL to use it. Add a URL-safe PostgreSQL password to the same environment file, then start both Compose files together:
+
+```sh
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> deploy/.env
+docker compose --env-file deploy/.env \
+  -f deploy/compose.yaml \
+  -f deploy/compose.postgres.yaml up -d
+```
+
+PostgreSQL is not published to the host. Back up its volume separately; changing `POSTGRES_PASSWORD` in the environment does not change an existing database password.
 
 ## Kubernetes
 
@@ -70,7 +81,7 @@ For buckets used with multipart uploads or copies, configure an abort-incomplete
 
 ## SQLite deployment
 
-For a single Web UI instance, set `GARAGE_WEBUI__DATABASE_URL=sqlite:///data/garage-webui.db` and mount a persistent directory at `/data`, writable by UID 65532. Keep `GARAGE_WEBUI__SESSION_SECRET` stable. PostgreSQL and its credentials are unnecessary for this deployment. The supplied Compose and Kubernetes examples continue to use PostgreSQL by default.
+For a single Web UI instance, set `GARAGE_WEBUI__DATABASE_URL=sqlite:///data/garage-webui.db` and mount a persistent directory at `/data`, writable by UID 65532. Keep `GARAGE_WEBUI__SESSION_SECRET` stable. PostgreSQL and its credentials are unnecessary for this deployment. The supplied Compose example uses SQLite by default; the Kubernetes example continues to use PostgreSQL.
 
 For Kubernetes, use one replica with the `Recreate` deployment strategy and a persistent volume for `/data`. A rolling update must not start another instance against the same SQLite file. See [SQLite configuration](../configuration/index.md#sqlite) for locking and backup requirements.
 
